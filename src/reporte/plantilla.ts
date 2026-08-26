@@ -182,6 +182,18 @@ export const JS_REPORTE = `
   document.getElementById('pie-motor').textContent = META.motorTranscripcion;
   document.getElementById('pie-hash').textContent = META.hash;
 
+  var rend = META.resumen.rendimiento;
+  if (rend) {
+    var partesRend = [];
+    if (rend.tokensPorSegundo) partesRend.push(rend.tokensPorSegundo + ' tok/s');
+    if (rend.ejecucion && rend.ejecucion !== 'desconocido') partesRend.push('ejecucion en ' + rend.ejecucion);
+    if (rend.concurrencia > 1) partesRend.push('concurrencia ' + rend.concurrencia);
+    if (rend.desdeCache) partesRend.push(rend.desdeCache + ' desde cache');
+    if (partesRend.length) {
+      document.getElementById('pie-rendimiento').textContent = ' \u00b7 ' + partesRend.join(' \u00b7 ');
+    }
+  }
+
   var R = META.resumen;
   var kpis = [
     [R.totalSegmentos, 'afirmaciones segmentadas'],

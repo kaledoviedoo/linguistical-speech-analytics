@@ -61,6 +61,10 @@ export interface EvaluacionLLM {
 export interface ResultadoAfirmacion extends Afirmacion {
   evaluacion: EvaluacionLLM | null;
   evaluada: boolean;
+  /** true si la evaluacion salio de la cache y no costo computo. */
+  desdeCache: boolean;
+  /** Velocidad de generacion de esta llamada; ausente si vino de cache. */
+  tokensPorSegundo?: number;
   /** Por que no se evaluo (p. ej. "no supero el prefiltro heuristico"). */
   motivoOmision?: string;
   /** Error del LLM si la evaluacion fallo tras todos los reintentos. */
@@ -81,6 +85,17 @@ export interface ResumenAnalisis {
   scorePromedio: number;
   idiomas: Record<string, number>;
   msTotalLLM: number;
+  /** Diagnostico de rendimiento: cuello de botella real de la corrida. */
+  rendimiento: {
+    msCargaModelo: number;
+    tokensGenerados: number;
+    tokensPorSegundo: number;
+    desdeCache: number;
+    llamadas: number;
+    concurrencia: number;
+    /** 'gpu' | 'cpu' | 'mixto' | 'desconocido', segun /api/ps. */
+    ejecucion: string;
+  };
 }
 
 export interface Resultados {
@@ -110,5 +125,7 @@ export interface OpcionesCorrida {
   usarPrefiltro: boolean;
   limite: number | null;
   reintentos: number;
+  concurrencia: number;
+  usarCache: boolean;
   verboso: boolean;
 }

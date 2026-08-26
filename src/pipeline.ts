@@ -11,8 +11,10 @@ import path from 'node:path';
 import { EXT_MEDIO, EXT_SUBTITULOS, EXT_TEXTO, VERSION_ESQUEMA } from './config.js';
 import { descargarAudio, descargarSubtitulos } from './ingesta/descargar.js';
 import { parsearArchivoTexto } from './ingesta/parsear-texto.js';
-import { evaluarAfirmaciones } from './motor/analizar.js';
-import { estadoOllama, mensajeAyudaOllama, tieneModelo } from './motor/ollama.js';
+import { evaluarAfirmaciones, type MetricasLLM } from './motor/analizar.js';
+import { CacheEvaluaciones } from './motor/cache.js';
+import { estadoOllama, mensajeAyudaOllama, procesosCargados, tieneModelo } from './motor/ollama.js';
+import { HASH_PROMPT } from './motor/prompt.js';
 import { detectarIdiomaDocumento } from './procesamiento/idioma.js';
 import { segmentarEnAfirmaciones } from './procesamiento/segmentar.js';
 import { escribirReporte } from './reporte/generar.js';
@@ -142,7 +144,14 @@ async function obtenerTranscripcion(
   return { transcripcion, titulo };
 }
 
-function resumir(resultados: ResultadoAfirmacion[], umbral: number, msTotal: number): ResumenAnalisis {
+function resumir(
+  resultados: ResultadoAfirmacion[],
+  umbral: number,
+  msTotal: number,
+  metricas: MetricasLLM,
+  concurrencia: number,
+  ejecucion: string,
+): ResumenAnalisis {
   const evaluados = resultados.filter((r) => r.evaluada && r.evaluacion);
   const scores = evaluados.map((r) => r.evaluacion!.score_framing_causal);
   const idiomas: Record<string, number> = {};
@@ -158,7 +167,26 @@ function resumir(resultados: ResultadoAfirmacion[], umbral: number, msTotal: num
     scorePromedio: scores.length > 0 ? Number((scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(3)) : 0,
     idiomas,
     msTotalLLM: msTotal,
+    rendimiento: {
+      msCargaModelo: metricas.msCargaModelo,
+      tokensGenerados: metricas.tokensGenerados,
+      tokensPorSegundo: metricas.tokensPorSegundo,
+      desdeCache: metricas.desdeCache,
+      llamadas: metricas.llamadas,
+      concurrencia,
+      ejecucion,
+    },
   };
+}
+
+/** Traduce /api/ps a una etiqueta legible: donde esta corriendo realmente el modelo. */
+export async function dondeCorreElModelo(url: string, modelo: string): Promise<string> {
+  const cargados = await procesosCargados(url);
+  const m = cargados.find((c) => c.nombre === modelo || c.nombre.startsWith(modelo.split(':')[0] ?? ''));
+  if (!m) return 'desconocido';
+  if (m.porcentajeGPU >= 95) return 'gpu';
+  if (m.porcentajeGPU <= 5) return 'cpu';
+  return `mixto (${m.porcentajeGPU}% GPU)`;
 }
 
 export interface SalidaPipeline {
@@ -178,7 +206,7 @@ export async function ejecutarPipeline(opciones: OpcionesPipeline): Promise<Sali
   // --- Ollama antes que nada: si no esta, no tiene sentido transcribir 40 minutos.
   const estado = await estadoOllama(opciones.urlOllama);
   if (!estado.disponible || !tieneModelo(estado.modelos, opciones.modelo)) {
-    throw new Error(mensajeAyudaOllama(opciones.urlOllama, opciones.modelo, estado));
+    throw new Error(await mensajeAyudaOllama(opciones.urlOllama, opciones.modelo, estado));
   }
   log.ok(`Ollama v${estado.version ?? '?'} responde en ${opciones.urlOllama} con "${opciones.modelo}".`);
 
@@ -210,14 +238,25 @@ export async function ejecutarPipeline(opciones: OpcionesPipeline): Promise<Sali
   }
 
   // --- Motor de deteccion
-  log.paso(4, `Evaluando framing causal con ${opciones.modelo}...`);
+  log.paso(4, `Evaluando framing causal con ${opciones.modelo}` +
+    (opciones.concurrencia > 1 ? ` (concurrencia ${opciones.concurrencia})` : '') + '...');
+
+  const cache = opciones.usarCache
+    ? new CacheEvaluaciones(path.join(dir, 'cache-evaluaciones.json'), opciones.modelo, HASH_PROMPT, !opciones.forzar)
+    : null;
+  if (cache && cache.tamano > 0) log.detalle(`Cache de evaluaciones: ${cache.tamano} entradas previas.`);
+
   const t0 = Date.now();
-  const resultadosAfirmaciones = await evaluarAfirmaciones(afirmaciones, opciones, (p) =>
-    progreso(p.hechas, p.total, `${p.ultimoMs} ms`),
+  const { resultados: resultadosAfirmaciones, metricas } = await evaluarAfirmaciones(
+    afirmaciones,
+    opciones,
+    cache,
+    (p) => progreso(p.hechas, p.total, p.tokensPorSegundo > 0 ? `${p.tokensPorSegundo} tok/s` : 'cache'),
   );
   const msTotal = Date.now() - t0;
 
-  const resumen = resumir(resultadosAfirmaciones, opciones.umbral, msTotal);
+  const ejecucion = await dondeCorreElModelo(opciones.urlOllama, opciones.modelo);
+  const resumen = resumir(resultadosAfirmaciones, opciones.umbral, msTotal, metricas, opciones.concurrencia, ejecucion);
   const resultados: Resultados = {
     hash,
     fuente: opciones.entrada,
@@ -241,6 +280,22 @@ export async function ejecutarPipeline(opciones: OpcionesPipeline): Promise<Sali
       `(${resumen.evaluados > 0 ? Math.round(msTotal / resumen.evaluados) : 0} ms por afirmacion). ` +
       `${resumen.sobreUmbral} sobre el umbral ${opciones.umbral}.`,
   );
+  if (metricas.desdeCache > 0) {
+    log.ok(`${metricas.desdeCache} salieron de la cache sin costar computo.`);
+  }
+  if (metricas.llamadas > 0) {
+    log.detalle(
+      `Rendimiento: ${metricas.tokensPorSegundo} tok/s, ${metricas.tokensGenerados} tokens generados, ` +
+        `carga del modelo ${(metricas.msCargaModelo / 1000).toFixed(1)} s, ejecucion en ${ejecucion}.`,
+    );
+    if (ejecucion === 'cpu') {
+      log.aviso(
+        `El modelo esta corriendo en CPU (${metricas.tokensPorSegundo} tok/s). Es lo que hace que ` +
+          `cada afirmacion tarde segundos y no milisegundos.`,
+      );
+      log.aviso('Opciones: un modelo mas chico (--modelo qwen2.5:1.5b) o mas paralelismo (--concurrencia 3).');
+    }
+  }
 
   // --- Reporte
   log.paso(5, 'Generando reporte HTML autocontenido...');

@@ -16,6 +16,11 @@ import { segmentarEnAfirmaciones } from '../src/procesamiento/segmentar.js';
 import { construirHTML } from '../src/reporte/generar.js';
 import type { ResultadoAfirmacion, Resultados } from '../src/tipos.js';
 import { formatearTiempo } from '../src/utilidades/rutas.js';
+import { citarWindows, ejecutar } from '../src/utilidades/proceso.js';
+import { CacheEvaluaciones } from '../src/motor/cache.js';
+import { HASH_PROMPT, PROMPT_SISTEMA } from '../src/motor/prompt.js';
+import fs from 'node:fs';
+import os from 'node:os';
 import { gris, negrita, rojo, verde } from '../src/utilidades/log.js';
 
 const AQUI = path.dirname(fileURLToPath(import.meta.url));
@@ -165,13 +170,75 @@ comprobar(
 );
 comprobar('Esquema: rechaza texto sin JSON', !parsearRespuesta('no puedo responder eso').ok);
 
+// ------------------------------------------------------------- subprocesos
+comprobar('Proceso: no cita lo que no lo necesita', citarWindows('ffmpeg') === 'ffmpeg');
+comprobar(
+  'Proceso: cita rutas con espacios',
+  citarWindows('C:\\Mis Videos\\a.mp4') === '"C:\\Mis Videos\\a.mp4"',
+  citarWindows('C:\\Mis Videos\\a.mp4'),
+);
+comprobar(
+  'Proceso: cita la plantilla de yt-dlp con %',
+  citarWindows('%(title)s') === '"%(title)s"',
+  citarWindows('%(title)s'),
+);
+comprobar(
+  'Proceso: escapa comillas internas',
+  citarWindows('di "hola"') === '"di \\"hola\\""',
+  citarWindows('di "hola"'),
+);
+const eco = await ejecutar(process.execPath, ['-e', 'process.stdout.write(process.argv[1] || "")', 'con espacios & simbolos']);
+comprobar(
+  'Proceso: los argumentos llegan intactos al subproceso',
+  eco.codigo === 0 && eco.stdout === 'con espacios & simbolos',
+  `codigo=${eco.codigo} stdout=${JSON.stringify(eco.stdout)}`,
+);
+
 // -------------------------------------------------------------------- tiempo
 comprobar('Tiempo: 3725 s -> 01:02:05', formatearTiempo(3725) === '01:02:05', formatearTiempo(3725));
+
+// ---------------------------------------------------------------------- cache
+const rutaCache = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'afc-')), 'cache.json');
+const evaluacionCache = {
+  tiene_lenguaje_causal_fuerte: true,
+  tiene_contrafactual_o_comparacion: false,
+  ventana_temporal_mencionada: 'ninguna' as const,
+  score_framing_causal: 0.85,
+  justificacion: 'Atribucion causal unica sin comparar con el periodo previo.',
+};
+
+const c1 = new CacheEvaluaciones(rutaCache, 'qwen2.5:3b', HASH_PROMPT, true);
+comprobar('Cache: arranca vacia', c1.tamano === 0 && c1.obtener('una frase') === null);
+c1.guardar('una frase', evaluacionCache);
+c1.persistir();
+comprobar('Cache: persiste a disco', fs.existsSync(rutaCache));
+
+const c2 = new CacheEvaluaciones(rutaCache, 'qwen2.5:3b', HASH_PROMPT, true);
+comprobar(
+  'Cache: una corrida nueva reutiliza la evaluacion',
+  c2.obtener('una frase')?.score_framing_causal === 0.85 && c2.aciertos === 1,
+);
+comprobar('Cache: no confunde textos distintos', c2.obtener('otra frase') === null);
+
+const c3 = new CacheEvaluaciones(rutaCache, 'llama3.2:3b', HASH_PROMPT, true);
+comprobar('Cache: cambiar de modelo invalida la entrada', c3.obtener('una frase') === null);
+
+const c4 = new CacheEvaluaciones(rutaCache, 'qwen2.5:3b', 'otrohash', true);
+comprobar('Cache: cambiar el prompt invalida la entrada', c4.obtener('una frase') === null);
+
+const c5 = new CacheEvaluaciones(rutaCache, 'qwen2.5:3b', HASH_PROMPT, false);
+comprobar('Cache: deshabilitada nunca acierta', c5.obtener('una frase') === null);
+comprobar(
+  'Cache: la huella del prompt cambia si cambia el prompt',
+  HASH_PROMPT.length === 8 && PROMPT_SISTEMA.includes('maximo 20 palabras'),
+);
+fs.rmSync(path.dirname(rutaCache), { recursive: true, force: true });
 
 // -------------------------------------------------------------------- reporte
 const simulados: ResultadoAfirmacion[] = afirmaciones.map((a, i) => ({
   ...a,
   evaluada: a.preseleccionada,
+  desdeCache: false,
   evaluacion: a.preseleccionada
     ? {
         tiene_lenguaje_causal_fuerte: i % 2 === 0,
@@ -206,6 +273,15 @@ const resultados: Resultados = {
     scorePromedio: 0.45,
     idiomas: { Espanol: simulados.length },
     msTotalLLM: 1400,
+    rendimiento: {
+      msCargaModelo: 0,
+      tokensGenerados: 420,
+      tokensPorSegundo: 9.5,
+      desdeCache: 0,
+      llamadas: 4,
+      concurrencia: 1,
+      ejecucion: 'cpu',
+    },
   },
   resultados: simulados,
 };

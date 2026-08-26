@@ -41,7 +41,7 @@ async function principal(): Promise<void> {
 
   const estado = await estadoOllama(URL);
   if (!estado.disponible || !tieneModelo(estado.modelos, MODELO)) {
-    console.error(rojo(mensajeAyudaOllama(URL, MODELO, estado)));
+    console.error(rojo(await mensajeAyudaOllama(URL, MODELO, estado)));
     process.exitCode = 1;
     return;
   }
@@ -49,6 +49,8 @@ async function principal(): Promise<void> {
   let esquemaOk = 0;
   let coincideTodo = 0;
   let msTotal = 0;
+  let tokens = 0;
+  let msGeneracion = 0;
   const fallosEsquema: string[] = [];
   const primerJSON = new Map<string, string>();
 
@@ -60,6 +62,8 @@ async function principal(): Promise<void> {
     for (let intento = 1; intento <= REINTENTOS_LLM + 1; intento++) {
       const r = await generar(URL, MODELO, PROMPT_SISTEMA, construirPromptUsuario(caso.texto, caso.idioma));
       ms += r.ms;
+      tokens += r.tokensSalida;
+      msGeneracion += r.msGeneracion;
       const v = parsearRespuesta(r.texto);
       if (v.ok) {
         evaluacion = v.evaluacion;
@@ -112,6 +116,11 @@ async function principal(): Promise<void> {
   console.log(`  Coincidencia total       ${coincideTodo}/${CASOS.length} ${gris('(informativo, no bloqueante)')}`);
   console.log(`  Determinismo temp=0      ${deterministico ? verde('si') : amarillo('no')}`);
   console.log(`  Latencia media           ${Math.round(msTotal / CASOS.length)} ms por afirmacion`);
+  const tokPorSeg = msGeneracion > 0 ? (tokens / msGeneracion) * 1000 : 0;
+  console.log(`  Velocidad de generacion  ${tokPorSeg.toFixed(1)} tok/s ${gris(`(${Math.round(tokens / CASOS.length)} tokens por respuesta)`)}`);
+  if (tokPorSeg > 0 && tokPorSeg < 25) {
+    console.log(amarillo('  Ese ritmo es de CPU, no de GPU. Corre "npm run benchmark" para el detalle.'));
+  }
 
   if (fallosEsquema.length > 0) {
     console.log(rojo('\nFallos de esquema:'));

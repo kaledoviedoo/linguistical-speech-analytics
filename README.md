@@ -25,11 +25,35 @@ sin ningún servidor levantado en segundo plano.
 | **ffmpeg** | audio y video | no hace falta para `.srt` / `.vtt` / `.txt` |
 | **yt-dlp** | links | no hace falta para archivos locales |
 
-Pensado para GPUs de consumo de **8 GB de VRAM o menos**. Ver [Optimizaciones](#optimizaciones-para-recursos-bajos).
+Pensado para GPUs de consumo de **8 GB de VRAM o menos**. Si Ollama no encuentra GPU compatible corre en
+CPU y todo va unas 10 veces mas lento: medilo con `npm run benchmark`. Ver [Rendimiento](#rendimiento).
 
 ---
 
 ## Instalación y uso
+
+### Windows (PowerShell)
+
+PowerShell bloquea por defecto el script `npm.ps1`, así que el repo trae wrappers `.cmd` que lo evitan
+por completo. **No hace falta cambiar ninguna política ni ser administrador.**
+
+```powershell
+cd C:\ruta\al\repo
+.\instalar.cmd                                    # npm install + ollama pull qwen2.5:3b
+.\verificar.cmd                                   # diagnóstico del entorno
+.\analizar.cmd tests\fixtures\discurso-es.srt     # primer análisis
+```
+
+Antes hace falta tener **Node.js** (https://nodejs.org, versión LTS) y **Ollama**:
+
+```powershell
+winget install --id Ollama.Ollama -e
+```
+
+Después de instalar cualquiera de los dos, **cerrá y volvé a abrir la terminal** — si no, el PATH de la
+sesión actual no los ve.
+
+### macOS y Linux
 
 ```bash
 git clone <repo>
@@ -39,7 +63,7 @@ npm install
 # Modelo ligero en Ollama (una sola vez)
 ollama pull qwen2.5:3b
 
-# Comprueba que todo esté en su sitio (opcional pero recomendado)
+# Comprueba que todo esté en su sitio
 npm run verificar-entorno
 
 # Analizar
@@ -51,6 +75,18 @@ npm run analizar -- ./transcripcion.srt
 Un solo comando: analiza, escribe `./reportes/<hash>.html` y lo **abre en el navegador vía `file://`**.
 No queda ningún proceso corriendo después.
 
+### Los cuatro wrappers de Windows
+
+| Archivo | Equivale a |
+|---|---|
+| `instalar.cmd` | `npm install` + `ollama pull qwen2.5:3b`, con chequeos previos |
+| `verificar.cmd` | `npm run verificar-entorno` |
+| `analizar.cmd <entrada>` | `npm run analizar -- <entrada>` |
+| `probar.cmd` | `npm run test:pipeline` y luego `npm run test:prompt` |
+| `benchmark.cmd` | `npm run benchmark` |
+
+Aceptan las mismas opciones: `.\analizar.cmd discurso.mp3 --idioma es --umbral 0.6`
+
 ### Opciones
 
 ```
@@ -60,6 +96,8 @@ No queda ningún proceso corriendo después.
     --idioma <codigo>     Fuerza el idioma (es, en, pt...) en vez de autodetectar
     --limite <n>          Evalúa solo las primeras n afirmaciones filtradas
     --reintentos <n>      Reintentos ante JSON inválido (por defecto: 2)
+    --concurrencia <n>    Peticiones simultáneas a Ollama (por defecto: 1)
+    --sin-cache           No reutiliza evaluaciones previas de afirmaciones idénticas
     --ollama <url>        URL de Ollama               (por defecto: http://localhost:11434)
     --sin-prefiltro       Manda TODAS las oraciones al modelo (más lento, más recall)
     --preferir-subtitulos Si el link ya tiene subtítulos, úsalos en vez de transcribir
@@ -67,6 +105,7 @@ No queda ningún proceso corriendo después.
     --no-abrir            No abre el navegador al terminar
 -v, --verboso             Log detallado
     --verificar-entorno   Diagnóstico de Ollama, modelos y binarios locales
+    --benchmark           Mide tok/s reales y estima cuánto tardará un discurso
 -h, --ayuda               Ayuda
 ```
 
@@ -144,17 +183,49 @@ El prompt del sistema (`src/motor/prompt.ts`) incorpora las cinco hipótesis de 
 
 ---
 
-## Optimizaciones para recursos bajos
+## Rendimiento
 
-- **Modelo LLM de 3B por defecto** (`qwen2.5:3b`, ~2 GB en VRAM con cuantización Q4). Alternativa:
-  `--modelo llama3.2:3b`.
+Antes de optimizar a ciegas, **medí**:
+
+```bash
+npm run benchmark          # Windows: .\benchmark.cmd
+```
+
+Reporta tokens/segundo reales, tokens por respuesta, **si el modelo está corriendo en GPU o en CPU**
+(leído de `/api/ps`, no adivinado) y una estimación de cuánto tardaría un discurso de 40 minutos.
+
+**La diferencia entre GPU y CPU es de un orden de magnitud.** Un `qwen2.5:3b` cuantizado ronda los
+60–120 tok/s en una GPU dedicada y los 8–12 tok/s en CPU. Como cada afirmación genera unos 80–110 tokens,
+eso se traduce en menos de 2 segundos por afirmación en GPU y unos 10 en CPU. Ollama usa CPU cuando no
+encuentra una GPU compatible — gráficos integrados Intel y AMD sin ROCm entran en ese caso.
+
+Si el benchmark dice CPU, en orden de impacto:
+
+| Palanca | Ganancia típica | Costo |
+|---|---|---|
+| `--modelo qwen2.5:1.5b` | ~2× más rápido | algo menos de precisión en el juicio — validalo con `npm run test:prompt -- --modelo qwen2.5:1.5b` |
+| Caché de evaluaciones (automática) | la segunda corrida es instantánea | ninguno |
+| `--limite 50` | proporcional | analiza solo una parte |
+| `--concurrencia 3` | 0–40% | necesita `OLLAMA_NUM_PARALLEL=4` en el entorno de Ollama |
+
+### Optimizaciones incorporadas
+
+- **Modelo LLM de 3B por defecto** (`qwen2.5:3b`, ~2 GB en VRAM con cuantización Q4). Alternativas:
+  `--modelo llama3.2:3b`, `--modelo qwen2.5:1.5b`.
 - **Opciones de inferencia fijas y estrictas** en cada llamada a `POST /api/generate`:
   `format: "json"`, `options: { temperature: 0.0, num_ctx: 2048, num_predict: 250 }`.
   Un contexto chico mantiene la huella de KV-cache mínima, que es lo que permite convivir con Whisper
   en 8 GB; `num_predict: 250` corta divagaciones porque la respuesta es un JSON corto.
+- **`keep_alive: 15m`** en cada petición: cargar el modelo desde disco cuesta decenas de segundos y sin
+  esto se paga en **cada** ejecución del CLI, no solo la primera.
+- **El prompt exige justificaciones de una frase, máximo 20 palabras.** La justificación es cerca de la
+  mitad de los tokens generados, y en CPU el tiempo es directamente proporcional a los tokens.
+- **Caché de evaluaciones** en `./data/<hash>/cache-evaluaciones.json`. La clave combina el texto de la
+  afirmación, el modelo y una huella del prompt del sistema: si cambiás cualquiera de los tres, las
+  entradas afectadas se invalidan solas. Volver a correr para mirar otro umbral no cuesta cómputo.
 - **Whisper cuantizado en ONNX** ejecutado dentro de Node, no en un servicio aparte.
-- **Evaluación secuencial**, no en paralelo: con poca VRAM, varias generaciones simultáneas obligan a
-  Ollama a swapear KV-cache y la latencia se dispara.
+- **Evaluación secuencial por defecto**: con poca VRAM, varias generaciones simultáneas obligan a Ollama
+  a swapear KV-cache y la latencia se dispara. `--concurrencia` lo sube cuando el cuello de botella es otro.
 - **Prefiltro heurístico** antes del LLM: una afirmación causal siempre deja rastro léxico, así que solo
   las oraciones con conector causal llegan al modelo. En un discurso típico eso descarta el 60–80% del
   texto sin gastar un token.
@@ -167,7 +238,8 @@ El prompt del sistema (`src/motor/prompt.ts`) incorpora las cinco hipótesis de 
 ```
 data/<hash>/transcripcion.json   segmentos con timestamps + idioma + motor usado
 data/<hash>/afirmaciones.json    oraciones individuales, idioma y marcadores heurísticos
-data/<hash>/resultados.json      evaluación completa + resumen
+data/<hash>/resultados.json      evaluación completa + resumen + métricas de rendimiento
+data/<hash>/cache-evaluaciones.json  evaluaciones ya pagadas, por texto + modelo + prompt
 reportes/<hash>.html             reporte autocontenido (CSS y JS embebidos)
 ```
 
@@ -205,6 +277,11 @@ npm run test:prompt -- --modelo llama3.2:3b
 ## Estructura
 
 ```
+instalar.cmd                  wrappers de Windows: evitan el bloqueo de npm.ps1
+verificar.cmd
+analizar.cmd
+probar.cmd
+benchmark.cmd
 src/
   cli.ts                      parseo de argumentos y arranque
   pipeline.ts                 orquestador de las 5 etapas
@@ -221,9 +298,10 @@ src/
     prefiltro.ts              conectores causales en 6 idiomas
   motor/
     prompt.ts                 prompt del sistema con las 5 hipótesis
-    ollama.ts                 cliente REST mínimo
+    ollama.ts                 cliente REST mínimo + métricas de /api/ps
     esquema.ts                validación y reparación del JSON
-    analizar.ts               bucle de evaluación con reintentos
+    cache.ts                  evaluaciones ya pagadas, invalidadas por modelo y prompt
+    analizar.ts               pool de evaluación con reintentos y caché
   reporte/
     generar.ts                ensamblado del HTML
     plantilla.ts              CSS y JS embebidos
@@ -246,6 +324,50 @@ Nada del contenido analizado sale de tu máquina. El único tráfico de red posi
    Con `AFC_SOLO_LOCAL=1` se prohíbe cualquier descarga de modelos y solo se usa lo ya cacheado.
 
 Las llamadas al LLM van a `localhost`. `./data` y `./reportes` están en `.gitignore`.
+
+---
+
+## Problemas frecuentes
+
+**`No se puede cargar el archivo ...\npm.ps1 porque la ejecución de scripts está deshabilitada`**
+
+Es la política de ejecución de PowerShell, no un problema del proyecto. Tres salidas, de menos a más
+invasiva:
+
+1. Usar los wrappers: `.\instalar.cmd`, `.\analizar.cmd ...` (recomendado, no toca nada del sistema).
+2. Llamar al `.cmd` de npm directamente: `npm.cmd install`, `npm.cmd run analizar -- archivo.srt`.
+3. Habilitarlo solo para tu usuario, sin admin:
+   `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned`
+
+**`El término 'ollama' no se reconoce...`**
+
+Ollama no está instalado, o lo instalaste con la terminal ya abierta. Instalá con
+`winget install --id Ollama.Ollama -e`, cerrá la ventana, abrí una nueva y probá `ollama --version`.
+
+**`Ollama esta instalado pero no responde en http://localhost:11434`**
+
+El demonio no está levantado. En Windows suele arrancar solo (icono en la bandeja del sistema); si no,
+`ollama serve` en una terminal aparte.
+
+**`Ollama responde pero no tiene el modelo "qwen2.5:3b"`**
+
+`ollama pull qwen2.5:3b`. Son ~2 GB y la descarga tarda unos minutos.
+
+**El análisis dice "Ninguna afirmación superó el prefiltro"**
+
+El material no tiene conectores causales léxicos, o el prefiltro no los cubre. Volvé a correr con
+`--sin-prefiltro` para mandar todas las oraciones al modelo.
+
+**Cada afirmación tarda ~10 segundos**
+
+Ollama está usando la CPU. Corré `npm run benchmark` para confirmarlo y ver las alternativas.
+No es un problema del pipeline: es la velocidad de generación del modelo en tu hardware.
+
+**La primera corrida sobre audio tarda mucho**
+
+Transformers.js descarga el modelo Whisper ONNX (~80 MB para `whisper-base`) la primera vez y lo cachea
+en `.models/`. Además la transcripción en CPU es lenta: para un video de YouTube con subtítulos,
+`--preferir-subtitulos` salta Whisper por completo.
 
 ---
 

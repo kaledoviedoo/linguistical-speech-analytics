@@ -7,13 +7,35 @@ export interface ResultadoProceso {
   stderr: string;
 }
 
-export function ejecutar(
+export interface OpcionesEjecucion {
+  onLinea?: (linea: string) => void;
+}
+
+/**
+ * En Windows, `spawn` con shell:true concatena los argumentos en una unica linea
+ * de comandos, asi que hay que citar a mano lo que lleve espacios o metacaracteres.
+ */
+export function citarWindows(arg: string): string {
+  if (arg.length > 0 && !/[\s"^&|<>()%!]/.test(arg)) return arg;
+  return `"${arg.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/, '$1$1')}"`;
+}
+
+function ejecutarInterno(
   comando: string,
   args: string[],
-  opciones: { onLinea?: (linea: string) => void } = {},
+  opciones: OpcionesEjecucion,
+  usarShell: boolean,
 ): Promise<ResultadoProceso> {
   return new Promise((resolve, reject) => {
-    const proc = spawn(comando, args, { stdio: ['ignore', 'pipe', 'pipe'], shell: process.platform === 'win32' });
+    const argsFinales = usarShell && process.platform === 'win32' ? args.map(citarWindows) : args;
+    const comandoFinal = usarShell && process.platform === 'win32' ? citarWindows(comando) : comando;
+
+    const proc = spawn(comandoFinal, argsFinales, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      shell: usarShell,
+      windowsVerbatimArguments: usarShell && process.platform === 'win32',
+    });
+
     let stdout = '';
     let stderr = '';
 
@@ -30,6 +52,30 @@ export function ejecutar(
   });
 }
 
+/**
+ * Ejecuta un binario local.
+ *
+ * Primero sin shell (es lo correcto y lo seguro: los argumentos van tal cual,
+ * sin que nadie los reinterprete). Si en Windows falla por ENOENT/EINVAL se
+ * reintenta con shell, que es la unica forma de invocar wrappers .cmd/.bat
+ * desde Node 20 en adelante.
+ */
+export async function ejecutar(
+  comando: string,
+  args: string[],
+  opciones: OpcionesEjecucion = {},
+): Promise<ResultadoProceso> {
+  try {
+    return await ejecutarInterno(comando, args, opciones, false);
+  } catch (err) {
+    const codigo = (err as NodeJS.ErrnoException).code;
+    if (process.platform === 'win32' && (codigo === 'ENOENT' || codigo === 'EINVAL')) {
+      return ejecutarInterno(comando, args, opciones, true);
+    }
+    throw err;
+  }
+}
+
 /** true si el binario existe y responde a --version. */
 export async function existeBinario(comando: string): Promise<boolean> {
   try {
@@ -40,15 +86,30 @@ export async function existeBinario(comando: string): Promise<boolean> {
   }
 }
 
-export function errorBinarioFaltante(comando: string): Error {
-  const guias: Record<string, string> = {
-    'yt-dlp':
-      'Instalalo local: pipx install yt-dlp  |  brew install yt-dlp  |  winget install yt-dlp.yt-dlp\n' +
-      '  (o descarga el binario suelto desde github.com/yt-dlp/yt-dlp/releases y ponlo en el PATH)',
-    ffmpeg:
-      'Instalalo local: brew install ffmpeg  |  winget install Gyan.FFmpeg  |  sudo apt install ffmpeg',
+/** Instrucciones de instalacion por plataforma, para no mandar al usuario a buscar. */
+export function instruccionesInstalacion(comando: string): string {
+  const esWindows = process.platform === 'win32';
+  const guias: Record<string, { win: string; otros: string }> = {
+    'yt-dlp': {
+      win: 'winget install --id yt-dlp.yt-dlp -e    (despues cerra y volve a abrir la terminal)',
+      otros: 'brew install yt-dlp   |   pipx install yt-dlp   |   sudo apt install yt-dlp',
+    },
+    ffmpeg: {
+      win: 'winget install --id Gyan.FFmpeg -e      (despues cerra y volve a abrir la terminal)',
+      otros: 'brew install ffmpeg   |   sudo apt install ffmpeg',
+    },
+    ollama: {
+      win: 'winget install --id Ollama.Ollama -e    (despues cerra y volve a abrir la terminal)',
+      otros: 'https://ollama.com/download',
+    },
   };
+  const g = guias[comando];
+  if (!g) return 'Instalalo y volve a intentar.';
+  return esWindows ? g.win : g.otros;
+}
+
+export function errorBinarioFaltante(comando: string): Error {
   return new Error(
-    `No encuentro "${comando}" en el PATH.\n  ${guias[comando] ?? 'Instalalo y volve a intentar.'}`,
+    `No encuentro "${comando}" en el PATH.\n  ${instruccionesInstalacion(comando)}`,
   );
 }

@@ -44,6 +44,20 @@ export const OPCIONES_OLLAMA = {
   num_predict: 250,
 } as const;
 
+/**
+ * Cuanto tiempo deja Ollama el modelo cargado en memoria tras la ultima peticion.
+ * Cargar qwen2.5:3b desde disco cuesta decenas de segundos; con esto se paga una vez
+ * y no en cada corrida del CLI.
+ */
+export const KEEP_ALIVE = process.env.AFC_KEEP_ALIVE ?? '15m';
+
+/**
+ * Peticiones simultaneas a Ollama.
+ * 1 por defecto: con poca VRAM, varias generaciones a la vez obligan a swapear KV-cache.
+ * Si Ollama corre en CPU o te sobra VRAM, subilo con --concurrencia 2..4.
+ */
+export const CONCURRENCIA_DEFECTO = Number(process.env.AFC_CONCURRENCIA ?? '1');
+
 /** Umbral por defecto del filtro de score en el reporte. */
 export const UMBRAL_DEFECTO = Number(process.env.AFC_UMBRAL ?? '0.7');
 

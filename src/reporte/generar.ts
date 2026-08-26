@@ -154,7 +154,7 @@ export function construirHTML({ resultados, titulo, duracionSegundos }: DatosRep
 
   <footer class="pie">
     <p>Generado localmente el <span id="pie-fecha"></span> &middot; modelo <code id="pie-modelo"></code>
-       &middot; transcripción <code id="pie-motor"></code> &middot; hash <code id="pie-hash"></code></p>
+       &middot; transcripción <code id="pie-motor"></code> &middot; hash <code id="pie-hash"></code><span id="pie-rendimiento"></span></p>
     <p class="legal">Herramienta de análisis lingüístico. Los scores son heurísticos y provienen de un
        modelo de lenguaje pequeño ejecutado en local; deben leerse como una señal para revisión humana,
        nunca como un veredicto.</p>

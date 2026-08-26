@@ -14,6 +14,8 @@
  * que esto corra en una GPU de 8 GB al lado de Whisper.
  */
 
+import { createHash } from 'node:crypto';
+
 export const PROMPT_SISTEMA = `Sos un auditor de ESTRUCTURA ARGUMENTAL. Analizas UNA afirmacion y devuelves SOLO un objeto JSON.
 
 REGLA DE ALCANCE (la mas importante): NO evalues si el hecho es verdadero o falso. No sabes si ocurrio. Solo evalues COMO esta construido el argumento.
@@ -42,21 +44,28 @@ Si tiene_lenguaje_causal_fuerte es false, el score debe ser menor a 0.30.
 
 SALIDA
 Devolve UNICAMENTE este JSON, sin texto antes ni despues, sin markdown:
-{"tiene_lenguaje_causal_fuerte": <true|false>, "tiene_contrafactual_o_comparacion": <true|false>, "ventana_temporal_mencionada": "<ninguna|corta|razonable>", "score_framing_causal": <numero 0.0-1.0>, "justificacion": "<1 o 2 frases en espanol, obligatorio, explicando que marcador falta o esta presente>"}
+{"tiene_lenguaje_causal_fuerte": <true|false>, "tiene_contrafactual_o_comparacion": <true|false>, "ventana_temporal_mencionada": "<ninguna|corta|razonable>", "score_framing_causal": <numero 0.0-1.0>, "justificacion": "<UNA sola frase en espanol, maximo 20 palabras, obligatoria, diciendo que marcador falta o esta presente>"}
 
-La justificacion es OBLIGATORIA, va siempre en espanol, y debe hablar de la estructura (que comparacion falta, que plazo se dio), nunca de si el hecho es cierto.
+La justificacion es OBLIGATORIA, va siempre en espanol, y habla de la estructura (que comparacion falta, que plazo se dio), nunca de si el hecho es cierto.
+Se BREVE: una frase, maximo 20 palabras. Nada de preambulos ni repetir la afirmacion.
 
 EJEMPLO 1
 Afirmacion: "La inflacion se disparo por culpa de las politicas del gobierno anterior."
-{"tiene_lenguaje_causal_fuerte": true, "tiene_contrafactual_o_comparacion": false, "ventana_temporal_mencionada": "ninguna", "score_framing_causal": 0.85, "justificacion": "Atribucion causal directa y unica sin comparar con otros paises ni con el periodo previo, y sin indicar en que plazo se habria producido el efecto."}
+{"tiene_lenguaje_causal_fuerte": true, "tiene_contrafactual_o_comparacion": false, "ventana_temporal_mencionada": "ninguna", "score_framing_causal": 0.85, "justificacion": "Atribucion causal unica sin comparar con el periodo previo ni indicar plazo."}
 
 EJEMPLO 2
 Afirmacion: "Since the tax cut in 2019, employment rose 4% here, compared with 1% in neighbouring states over the same three years."
-{"tiene_lenguaje_causal_fuerte": false, "tiene_contrafactual_o_comparacion": true, "ventana_temporal_mencionada": "razonable", "score_framing_causal": 0.15, "justificacion": "Presenta un grupo de comparacion explicito y una ventana de tres anos, y describe la asociacion sin afirmar causalidad directa."}
+{"tiene_lenguaje_causal_fuerte": false, "tiene_contrafactual_o_comparacion": true, "ventana_temporal_mencionada": "razonable", "score_framing_causal": 0.15, "justificacion": "Da un grupo de comparacion explicito y una ventana de tres anos."}
 
 EJEMPLO 3
 Afirmacion: "El desempleo bajo dos semanas despues de que firmamos el decreto."
-{"tiene_lenguaje_causal_fuerte": true, "tiene_contrafactual_o_comparacion": false, "ventana_temporal_mencionada": "corta", "score_framing_causal": 0.9, "justificacion": "Sugiere causalidad por simple sucesion temporal en una ventana de dos semanas, demasiado corta para un efecto sobre el empleo, y sin ninguna serie de comparacion."}`;
+{"tiene_lenguaje_causal_fuerte": true, "tiene_contrafactual_o_comparacion": false, "ventana_temporal_mencionada": "corta", "score_framing_causal": 0.9, "justificacion": "Infiere causa por sucesion en dos semanas, plazo demasiado corto, y sin comparacion."}`;
+
+/**
+ * Huella del prompt del sistema. Sirve para invalidar la cache de evaluaciones
+ * automaticamente en cuanto se toca una sola palabra del prompt.
+ */
+export const HASH_PROMPT = createHash('sha1').update(PROMPT_SISTEMA).digest('hex').slice(0, 8);
 
 /** Mensaje de usuario: la afirmacion cruda, con su idioma como pista. */
 export function construirPromptUsuario(afirmacion: string, idioma: string): string {
