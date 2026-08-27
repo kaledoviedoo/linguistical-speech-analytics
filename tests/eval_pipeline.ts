@@ -9,7 +9,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parsearArchivoTexto, parsearSubtitulos } from '../src/ingesta/parsear-texto.js';
-import { extraerJSON, validarEvaluacion, parsearRespuesta } from '../src/motor/esquema.js';
+import { extraerJSON, validarEvaluacion, parsearRespuesta } from '../src/criterios/framing-causal/esquema.js';
 import { detectarIdiomaDocumento } from '../src/procesamiento/idioma.js';
 import { marcadoresCausales } from '../src/procesamiento/prefiltro.js';
 import { segmentarEnAfirmaciones } from '../src/procesamiento/segmentar.js';
@@ -18,7 +18,18 @@ import type { ResultadoAfirmacion, Resultados } from '../src/tipos.js';
 import { formatearTiempo } from '../src/utilidades/rutas.js';
 import { citarWindows, ejecutar } from '../src/utilidades/proceso.js';
 import { CacheEvaluaciones } from '../src/motor/cache.js';
-import { HASH_PROMPT, PROMPT_SISTEMA } from '../src/motor/prompt.js';
+import {
+  acumular, acumularMatriz, conteoVacio, exactitud, exactitudMatriz,
+  matrizVacia, metricasScore, precision, sensibilidad,
+} from '../src/analisis/metricas.js';
+import { medirRecall, veredicto } from '../src/analisis/recall-prefiltro.js';
+import { CASOS, CASOS_PUNTUABLES } from './afirmaciones-sinteticas.js';
+import { HASH_PROMPT, PROMPT_SISTEMA } from '../src/criterios/framing-causal/prompt.js';
+import { criterioFramingCausal } from '../src/criterios/framing-causal/index.js';
+import { empaquetar } from '../src/criterios/tipos.js';
+import { obtenerCriterio, listarCriterios, CRITERIO_POR_DEFECTO } from '../src/criterios/registro.js';
+import { motorDeGuion } from '../src/motor/inferencia.js';
+import { evaluarAfirmaciones } from '../src/motor/analizar.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import { gris, negrita, rojo, verde } from '../src/utilidades/log.js';
@@ -75,8 +86,14 @@ comprobar('Idioma: el discurso en espanol se detecta como es', detectarIdiomaDoc
 comprobar('Idioma: el discurso en ingles se detecta como en', detectarIdiomaDocumento(textoEn) === 'en', detectarIdiomaDocumento(textoEn));
 
 // ------------------------------------------------------------- segmentacion
-const afirmaciones = segmentarEnAfirmaciones(srt.segmentos, 'es');
+const afirmaciones = segmentarEnAfirmaciones(
+  srt.segmentos, 'es', null, (t) => criterioFramingCausal.marcadoresLexicos(t),
+);
 comprobar('Segmentacion: produce afirmaciones', afirmaciones.length >= 10, `obtuve ${afirmaciones.length}`);
+comprobar(
+  'Segmentacion: sin gate lexico del criterio no preselecciona nada',
+  segmentarEnAfirmaciones(srt.segmentos, 'es').every((a) => !a.preseleccionada),
+);
 comprobar(
   'Segmentacion: los cues cortados a mitad de frase se reunen',
   afirmaciones.some((a) => a.texto.startsWith('Quiero hablarles hoy del estado de la economia')),
@@ -199,13 +216,13 @@ comprobar('Tiempo: 3725 s -> 01:02:05', formatearTiempo(3725) === '01:02:05', fo
 
 // ---------------------------------------------------------------------- cache
 const rutaCache = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'afc-')), 'cache.json');
-const evaluacionCache = {
+const evaluacionCache = empaquetar(criterioFramingCausal, {
   tiene_lenguaje_causal_fuerte: true,
   tiene_contrafactual_o_comparacion: false,
   ventana_temporal_mencionada: 'ninguna' as const,
   score_framing_causal: 0.85,
   justificacion: 'Atribucion causal unica sin comparar con el periodo previo.',
-};
+});
 
 const c1 = new CacheEvaluaciones(rutaCache, 'qwen2.5:3b', HASH_PROMPT, true);
 comprobar('Cache: arranca vacia', c1.tamano === 0 && c1.obtener('una frase') === null);
@@ -216,7 +233,7 @@ comprobar('Cache: persiste a disco', fs.existsSync(rutaCache));
 const c2 = new CacheEvaluaciones(rutaCache, 'qwen2.5:3b', HASH_PROMPT, true);
 comprobar(
   'Cache: una corrida nueva reutiliza la evaluacion',
-  c2.obtener('una frase')?.score_framing_causal === 0.85 && c2.aciertos === 1,
+  c2.obtener('una frase')?.score === 0.85 && c2.aciertos === 1,
 );
 comprobar('Cache: no confunde textos distintos', c2.obtener('otra frase') === null);
 
@@ -234,19 +251,202 @@ comprobar(
 );
 fs.rmSync(path.dirname(rutaCache), { recursive: true, force: true });
 
+// -------------------------------------------------------------------- metricas
+const cb = conteoVacio();
+acumular(cb, true, true);    // vp
+acumular(cb, true, true);    // vp
+acumular(cb, false, false);  // vn
+acumular(cb, false, true);   // fp
+acumular(cb, true, false);   // fn
+comprobar('Metricas: cuenta vp/vn/fp/fn', cb.vp === 2 && cb.vn === 1 && cb.fp === 1 && cb.fn === 1);
+comprobar('Metricas: exactitud = (vp+vn)/total', exactitud(cb) === 3 / 5, String(exactitud(cb)));
+comprobar('Metricas: precision = vp/(vp+fp)', precision(cb) === 2 / 3, String(precision(cb)));
+comprobar('Metricas: sensibilidad = vp/(vp+fn)', sensibilidad(cb) === 2 / 3, String(sensibilidad(cb)));
+comprobar('Metricas: sin casos devuelve null en vez de NaN', exactitud(conteoVacio()) === null);
+comprobar(
+  'Metricas: precision es null si el modelo nunca dijo que si',
+  (() => { const c = conteoVacio(); acumular(c, true, false); return precision(c) === null; })(),
+);
+
+const mz = matrizVacia(['ninguna', 'corta', 'razonable']);
+acumularMatriz(mz, 'ninguna', 'ninguna');
+acumularMatriz(mz, 'corta', 'ninguna');
+acumularMatriz(mz, 'razonable', 'razonable');
+acumularMatriz(mz, 'corta', 'inventada');
+comprobar('Metricas: la matriz ignora etiquetas desconocidas', mz.total === 3, String(mz.total));
+comprobar('Metricas: exactitud de la matriz', exactitudMatriz(mz) === 2 / 3, String(exactitudMatriz(mz)));
+comprobar('Metricas: la matriz ubica el error en la celda correcta', mz.matriz['corta']?.['ninguna'] === 1);
+
+const ms = metricasScore([
+  { obtenido: 0.85, rango: [0.6, 1.0] },
+  { obtenido: 0.10, rango: [0.6, 1.0] },
+]);
+comprobar('Metricas: score dentro del rango', ms.dentroDelRango === 0.5, String(ms.dentroDelRango));
+comprobar('Metricas: error medio contra el punto medio', Math.abs((ms.errorMedio ?? 0) - 0.375) < 1e-9, String(ms.errorMedio));
+
+// --------------------------------------------------- conjunto de control
+comprobar('Control: hay al menos 20 casos', CASOS.length >= 20, `${CASOS.length}`);
+comprobar('Control: los dificiles no puntuan', CASOS_PUNTUABLES.length < CASOS.length);
+comprobar('Control: ids unicos', new Set(CASOS.map((c) => c.id)).size === CASOS.length);
+comprobar(
+  'Control: todo rango de score es valido y ordenado',
+  CASOS.every((c) => c.espera.score[0] >= 0 && c.espera.score[1] <= 1 && c.espera.score[0] < c.espera.score[1]),
+);
+comprobar(
+  'Control: coherencia interna (sin causal fuerte, el rango no puede llegar alto)',
+  CASOS.filter((c) => !c.dificil).every((c) => c.espera.causal || c.espera.score[1] <= 0.5),
+);
+comprobar(
+  'Control: cubre los cuatro limites nuevos',
+  ['c11', 'c12', 'c13', 'c14'].every((id) => CASOS.some((c) => c.id === id)),
+);
+comprobar('Control: hay mas de un idioma', new Set(CASOS.map((c) => c.idioma)).size >= 4);
+
+// ------------------------------------------------------- recall del prefiltro
+function afirmacionFalsa(id: string, texto: string, score: number, marcadores: string[]): ResultadoAfirmacion {
+  return {
+    id, indice: 0, inicio: 0, fin: 1, texto,
+    idioma: 'es', idiomaNombre: 'Español',
+    marcadoresHeuristicos: marcadores,
+    preseleccionada: marcadores.length > 0,
+    evaluada: true, desdeCache: false, intentos: 1, msLLM: 100,
+    evaluacion: empaquetar(criterioFramingCausal, {
+      tiene_lenguaje_causal_fuerte: true,
+      tiene_contrafactual_o_comparacion: false,
+      ventana_temporal_mencionada: 'ninguna' as const,
+      score_framing_causal: score,
+      justificacion: 'Justificacion de prueba para el test de recall.',
+    }),
+  };
+}
+
+const resultadosRecall = {
+  ...({} as Resultados),
+  resultados: [
+    afirmacionFalsa('a1', 'alta con conector', 0.9, ['provocar']),
+    afirmacionFalsa('a2', 'alta con conector', 0.8, ['por culpa de']),
+    afirmacionFalsa('a3', 'alta SIN conector', 0.85, []),
+    afirmacionFalsa('a4', 'baja sin conector', 0.2, []),
+    afirmacionFalsa('a5', 'baja sin conector', 0.1, []),
+  ],
+} as Resultados;
+
+const inf = medirRecall(resultadosRecall, 0.7);
+comprobar('Recall: cuenta las altas correctamente', inf.altasTotal === 3, String(inf.altasTotal));
+comprobar('Recall: identifica la perdida', inf.altasPerdidas === 1 && inf.perdidas[0]?.id === 'a3');
+comprobar('Recall: calcula 2/3', Math.abs((inf.recall ?? 0) - 2 / 3) < 1e-9, String(inf.recall));
+comprobar('Recall: ahorro de computo = sin conector / total', Math.abs(inf.ahorroComputo - 3 / 5) < 1e-9);
+comprobar('Recall: veredicto negativo con 67%', !veredicto(inf).ok);
+
+const infPerfecto = medirRecall(
+  { ...({} as Resultados), resultados: [afirmacionFalsa('b1', 'alta con conector', 0.9, ['provocar'])] } as Resultados,
+  0.7,
+);
+comprobar('Recall: veredicto positivo con 100%', veredicto(infPerfecto).ok);
+comprobar(
+  'Recall: sin afirmaciones altas devuelve null y lo dice',
+  (() => {
+    const i = medirRecall({ ...({} as Resultados), resultados: [afirmacionFalsa('c1', 'baja', 0.1, [])] } as Resultados, 0.7);
+    return i.recall === null && !veredicto(i).ok;
+  })(),
+);
+
+// ------------------------------------------------------- criterio y registro
+comprobar('Criterio: el registro devuelve el criterio por defecto', obtenerCriterio(CRITERIO_POR_DEFECTO).id === 'framing-causal');
+comprobar('Criterio: pedir uno inexistente falla con un mensaje util', (() => {
+  try { obtenerCriterio('no-existe'); return false; }
+  catch (e) { return (e as Error).message.includes('Disponibles'); }
+})());
+comprobar('Criterio: se puede listar lo disponible', listarCriterios().length >= 1 && (listarCriterios()[0]?.descripcion.length ?? 0) > 10);
+comprobar('Criterio: la huella del prompt es estable', criterioFramingCausal.hashPrompt === HASH_PROMPT);
+comprobar('Criterio: expone el gate lexico', criterioFramingCausal.marcadoresLexicos('eso provoco la crisis').includes('provocar'));
+
+const evalCausal = {
+  tiene_lenguaje_causal_fuerte: true,
+  tiene_contrafactual_o_comparacion: false,
+  ventana_temporal_mencionada: 'corta' as const,
+  score_framing_causal: 0.9,
+  justificacion: 'Sucesion en dos semanas presentada como causa, sin comparacion.',
+};
+const empaquetada = empaquetar(criterioFramingCausal, evalCausal);
+comprobar('Criterio: empaquetar normaliza score y justificacion', empaquetada.score === 0.9 && empaquetada.justificacion.startsWith('Sucesion'));
+comprobar('Criterio: empaquetar conserva los campos crudos para auditoria', empaquetada.campos['ventana_temporal_mencionada'] === 'corta');
+comprobar('Criterio: empaquetar registra que criterio lo produjo', empaquetada.criterio === 'framing-causal');
+comprobar(
+  'Criterio: los marcadores llevan tono, no nombres de campo',
+  empaquetada.marcadores.length === 3 &&
+    empaquetada.marcadores.every((m) => ['bueno', 'malo', 'neutro'].includes(m.tono)),
+);
+comprobar(
+  'Criterio: causal fuerte y ventana corta se marcan como que RESTAN defensa',
+  empaquetada.marcadores.filter((m) => m.tono === 'malo').length === 3,
+  JSON.stringify(empaquetada.marcadores),
+);
+
+// ------------------------------------- bucle de evaluacion, sin servidor HTTP
+const afirmacionesDemo = segmentarEnAfirmaciones(
+  srt.segmentos, 'es', 'es', (t) => criterioFramingCausal.marcadoresLexicos(t),
+);
+const opcionesDemo = { concurrencia: 1, reintentos: 2 };
+
+const jsonBueno = JSON.stringify(evalCausal);
+const motorBueno = motorDeGuion([jsonBueno]);
+const corridaOk = await evaluarAfirmaciones(afirmacionesDemo, opcionesDemo, {
+  criterio: criterioFramingCausal, motor: motorBueno, cache: null,
+});
+const evaluadasDemo = corridaOk.resultados.filter((r) => r.evaluada);
+comprobar('Motor: evalua solo las preseleccionadas', evaluadasDemo.length === afirmacionesDemo.filter((a) => a.preseleccionada).length);
+comprobar('Motor: el resultado sale empaquetado', evaluadasDemo[0]?.evaluacion?.score === 0.9);
+comprobar('Motor: contabiliza las llamadas', corridaOk.metricas.llamadas === evaluadasDemo.length);
+comprobar('Motor: el prompt de sistema que se manda es el del criterio', motorBueno.llamadas[0]?.sistema === criterioFramingCausal.promptSistema);
+comprobar('Motor: preserva el orden original', corridaOk.resultados.every((r, i) => r.id === afirmacionesDemo[i]?.id));
+
+const motorTerco = motorDeGuion(['no puedo responder eso']);
+const corridaMala = await evaluarAfirmaciones(afirmacionesDemo.slice(0, 3), opcionesDemo, {
+  criterio: criterioFramingCausal, motor: motorTerco, cache: null,
+});
+const fallida = corridaMala.resultados.find((r) => r.preseleccionada);
+comprobar('Motor: agota los reintentos ante JSON invalido', fallida?.intentos === 3, String(fallida?.intentos));
+comprobar('Motor: deja constancia del error', Boolean(fallida?.error) && fallida?.evaluada === false);
+
+const motorQueSeRecupera = motorDeGuion(['basura', jsonBueno]);
+const corridaMixta = await evaluarAfirmaciones(afirmacionesDemo.slice(0, 3), opcionesDemo, {
+  criterio: criterioFramingCausal, motor: motorQueSeRecupera, cache: null,
+});
+const recuperada = corridaMixta.resultados.find((r) => r.preseleccionada);
+comprobar('Motor: el segundo intento salva la afirmacion', recuperada?.evaluada === true && recuperada?.intentos === 2);
+
+const motorQueExplota = motorDeGuion([new Error('conexion rechazada')]);
+const corridaError = await evaluarAfirmaciones(afirmacionesDemo.slice(0, 3), opcionesDemo, {
+  criterio: criterioFramingCausal, motor: motorQueExplota, cache: null,
+});
+comprobar(
+  'Motor: un fallo de transporte no tumba la corrida',
+  corridaError.resultados.length === 3 && corridaError.resultados.some((r) => r.error?.includes('conexion rechazada')),
+);
+
+const corridaParalela = await evaluarAfirmaciones(afirmacionesDemo, { concurrencia: 4, reintentos: 0 }, {
+  criterio: criterioFramingCausal, motor: motorDeGuion([jsonBueno]), cache: null,
+});
+comprobar(
+  'Motor: con concurrencia 4 el orden y el conteo se mantienen',
+  corridaParalela.resultados.length === afirmacionesDemo.length &&
+    corridaParalela.resultados.every((r, i) => r.id === afirmacionesDemo[i]?.id),
+);
+
 // -------------------------------------------------------------------- reporte
 const simulados: ResultadoAfirmacion[] = afirmaciones.map((a, i) => ({
   ...a,
   evaluada: a.preseleccionada,
   desdeCache: false,
   evaluacion: a.preseleccionada
-    ? {
+    ? empaquetar(criterioFramingCausal, {
         tiene_lenguaje_causal_fuerte: i % 2 === 0,
         tiene_contrafactual_o_comparacion: i % 3 === 0,
-        ventana_temporal_mencionada: i % 3 === 0 ? 'razonable' : 'ninguna',
+        ventana_temporal_mencionada: (i % 3 === 0 ? 'razonable' : 'ninguna') as 'razonable' | 'ninguna',
         score_framing_causal: Number(((i % 10) / 10).toFixed(2)),
         justificacion: 'Justificacion simulada para el test del reporte </script><script>alert(1)</script>',
-      }
+      })
     : null,
   ...(a.preseleccionada ? {} : { motivoOmision: 'no contiene ningun conector causal (prefiltro heuristico)' }),
   intentos: a.preseleccionada ? 1 : 0,
@@ -260,6 +460,7 @@ const resultados: Resultados = {
   motorTranscripcion: 'srt',
   idiomaDocumento: 'es',
   modeloLLM: 'qwen2.5:3b',
+  criterio: 'framing-causal',
   timestampsReales: true,
   creadoEn: new Date().toISOString(),
   versionEsquema: 1,
@@ -303,6 +504,11 @@ comprobar(
     }
   })(),
 );
+comprobar(
+  'Reporte: la plantilla no menciona ningun campo del criterio',
+  !html.includes('tiene_lenguaje_causal_fuerte') && !html.includes('ventana_temporal_mencionada'),
+);
+comprobar('Reporte: los marcadores viajan con su tono', html.includes('"tono":'));
 comprobar('Reporte: los datos meta son JSON valido', (() => {
   const bloque = (html.split('<script id="datos-meta" type="application/json">')[1] ?? '').split('</script>')[0] ?? '';
   try {

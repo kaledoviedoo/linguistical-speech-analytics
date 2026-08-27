@@ -17,8 +17,11 @@ import {
   URL_OLLAMA,
 } from './config.js';
 import { estadoOllama, generar, procesosCargados, tieneModelo } from './motor/ollama.js';
-import { construirPromptUsuario, PROMPT_SISTEMA } from './motor/prompt.js';
+import { CRITERIO_POR_DEFECTO, listarCriterios, obtenerCriterio } from './criterios/registro.js';
 import { ejecutarPipeline, type OpcionesPipeline } from './pipeline.js';
+import type { Resultados } from './tipos.js';
+import { medirRecall, veredicto } from './analisis/recall-prefiltro.js';
+import { formatearTiempo } from './utilidades/rutas.js';
 import { TOTAL_CONECTORES } from './procesamiento/prefiltro.js';
 import { existeBinario, instruccionesInstalacion } from './utilidades/proceso.js';
 import { activarVerboso, amarillo, azul, gris, log, negrita, rojo, verde } from './utilidades/log.js';
@@ -46,23 +49,29 @@ ${negrita('Opciones')}
       --ollama <url>        URL de Ollama               (por defecto: ${URL_OLLAMA})
       --sin-prefiltro       Manda TODAS las oraciones al modelo (mas lento, mas recall)
       --preferir-subtitulos Si el link ya tiene subtitulos, usalos en vez de transcribir
+      --cookies <navegador> Cookies del navegador para YouTube (chrome, edge, firefox, brave)
+      --criterio <id>       Criterio de auditoria (por defecto: ${CRITERIO_POR_DEFECTO})
       --forzar              Ignora la cache de ./data y rehace todo
       --no-abrir            No abre el navegador al terminar
   -v, --verboso             Log detallado
       --verificar-entorno   Diagnostico de Ollama, modelos y binarios locales
       --benchmark           Mide tok/s reales y estima cuanto tardara un discurso
+      --medir-prefiltro     Evalua TODO el archivo y mide que se pierde el prefiltro
   -h, --ayuda               Esta ayuda
 
 ${negrita('Ejemplos')}
   npm run analizar -- "https://www.youtube.com/watch?v=XXXX"
   npm run analizar -- ./discurso.mp3 --idioma es
   npm run analizar -- ./tests/fixtures/discurso-es.srt --umbral 0.6
+  npm run analizar -- "https://youtu.be/XXXX" --preferir-subtitulos
+  npm run analizar -- "https://youtu.be/XXXX" --cookies chrome
 `;
 
 interface Argumentos extends OpcionesPipeline {
   ayuda: boolean;
   verificarEntorno: boolean;
   benchmark: boolean;
+  medirPrefiltro: boolean;
 }
 
 function siguiente(argv: string[], i: number, bandera: string): string {
@@ -86,11 +95,14 @@ export function parsearArgumentos(argv: string[]): Argumentos {
     reintentos: REINTENTOS_LLM,
     concurrencia: CONCURRENCIA_DEFECTO,
     usarCache: true,
+    criterio: CRITERIO_POR_DEFECTO,
+    cookiesNavegador: null,
     verboso: false,
     preferirSubtitulos: false,
     ayuda: false,
     verificarEntorno: false,
     benchmark: false,
+    medirPrefiltro: false,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -99,6 +111,7 @@ export function parsearArgumentos(argv: string[]): Argumentos {
       case '-h': case '--ayuda': case '--help': o.ayuda = true; break;
       case '--verificar-entorno': o.verificarEntorno = true; break;
       case '--benchmark': o.benchmark = true; break;
+      case '--medir-prefiltro': o.medirPrefiltro = true; o.usarPrefiltro = false; break;
       case '--sin-cache': o.usarCache = false; break;
       case '-v': case '--verboso': o.verboso = true; break;
       case '--no-abrir': o.abrirReporte = false; break;
@@ -109,6 +122,8 @@ export function parsearArgumentos(argv: string[]): Argumentos {
       case '--whisper': o.modeloWhisper = siguiente(argv, i, a); i++; break;
       case '--ollama': o.urlOllama = siguiente(argv, i, a).replace(/\/+$/, ''); i++; break;
       case '--idioma': o.idiomaForzado = siguiente(argv, i, a); i++; break;
+      case '--cookies': o.cookiesNavegador = siguiente(argv, i, a).toLowerCase(); i++; break;
+      case '--criterio': o.criterio = siguiente(argv, i, a); i++; break;
       case '-u': case '--umbral': o.umbral = Number(siguiente(argv, i, a)); i++; break;
       case '--limite': o.limite = Number(siguiente(argv, i, a)); i++; break;
       case '--reintentos': o.reintentos = Number(siguiente(argv, i, a)); i++; break;
@@ -185,7 +200,10 @@ async function verificarEntorno(o: Argumentos): Promise<number> {
   log.info(`${marca(ytdlp)} yt-dlp` + gris('  (solo para links)'));
   if (!ytdlp) log.info(gris(`       ${instruccionesInstalacion('yt-dlp')}`));
 
-  log.info(`${verde('  OK  ')} Prefiltro causal cargado` + gris(`  (${TOTAL_CONECTORES} conectores, 6 idiomas)`));
+  log.info(`${verde('  OK  ')} Prefiltro lexico cargado` + gris(`  (${TOTAL_CONECTORES} conectores, 6 idiomas)`));
+  for (const c of listarCriterios()) {
+    log.info(`${verde('  OK  ')} Criterio "${c.id}"` + gris(`  ${c.descripcion}`));
+  }
 
   const listo = problemaNode === null && estado.disponible && modeloOk;
   log.info('');
@@ -217,6 +235,7 @@ async function benchmark(o: Argumentos): Promise<number> {
     return 1;
   }
 
+  const criterio = obtenerCriterio(o.criterio);
   const FRASE = 'La inflacion se disparo por culpa de las politicas de la administracion anterior.';
   const MEDICIONES = 3;
 
@@ -227,7 +246,7 @@ async function benchmark(o: Argumentos): Promise<number> {
   );
 
   log.info('Calentando el modelo (esta llamada incluye la carga en memoria)...');
-  const calentamiento = await generar(o.urlOllama, o.modelo, PROMPT_SISTEMA, construirPromptUsuario(FRASE, 'Espanol'));
+  const calentamiento = await generar(o.urlOllama, o.modelo, criterio.promptSistema, criterio.construirPrompt(FRASE, 'Espanol'));
   log.info(
     gris(`      carga ${(calentamiento.msCarga / 1000).toFixed(1)} s, ` +
       `total ${(calentamiento.ms / 1000).toFixed(1)} s\n`),
@@ -239,7 +258,7 @@ async function benchmark(o: Argumentos): Promise<number> {
   let promptTokens = 0;
 
   for (let i = 1; i <= MEDICIONES; i++) {
-    const r = await generar(o.urlOllama, o.modelo, PROMPT_SISTEMA, construirPromptUsuario(FRASE, 'Espanol'));
+    const r = await generar(o.urlOllama, o.modelo, criterio.promptSistema, criterio.construirPrompt(FRASE, 'Espanol'));
     tiempos.push(r.ms);
     velocidades.push(r.tokensPorSegundo);
     tokens += r.tokensSalida;
@@ -281,8 +300,8 @@ async function benchmark(o: Argumentos): Promise<number> {
     log.info(amarillo('\nEl modelo esta en CPU. Esto es lo que podes hacer:'));
     log.info('  1. Modelo mas chico:   npm run analizar -- <archivo> --modelo qwen2.5:1.5b');
     log.info('     (primero: ollama pull qwen2.5:1.5b, y validalo con npm run test:prompt -- --modelo qwen2.5:1.5b)');
-    log.info('  2. Mas paralelismo:    --concurrencia 3');
-    log.info('     (requiere OLLAMA_NUM_PARALLEL=4 en el entorno de Ollama para que sirva de verdad)');
+    log.info(gris('  2. NO subas --concurrencia en CPU: cada peticion paralela mantiene su propio'));
+    log.info(gris('     cache de prefijo y vuelve a pagar la evaluacion del prompt de sistema entera.'));
     log.info('  3. Menos material:     --limite 50  para probar antes de procesar todo.');
     log.info(gris('  La cache hace que volver a correr el mismo archivo sea instantaneo.'));
   } else if (cargado) {
@@ -290,6 +309,48 @@ async function benchmark(o: Argumentos): Promise<number> {
   }
   log.info('');
   return 0;
+}
+
+/**
+ * Informe de la fase B: cuanto se pierde el prefiltro heuristico.
+ *
+ * Lo importante no es el porcentaje, es la LISTA. Cada afirmacion perdida es un
+ * conector concreto que le falta a prefiltro.ts, y se puede copiar y pegar.
+ */
+function informarRecall(resultados: Resultados, umbral: number): void {
+  const inf = medirRecall(resultados, umbral);
+  const v = veredicto(inf);
+
+  log.info(negrita('\nRecall del prefiltro heuristico\n'));
+  log.info(`  Afirmaciones en el archivo     ${inf.totalAfirmaciones}`);
+  log.info(`  Evaluadas por el modelo        ${inf.evaluadas}` + gris('   (todas, porque se desactivo el prefiltro)'));
+  log.info(`  Con algun conector causal      ${inf.conConector}` + gris(`   (${((1 - inf.ahorroComputo) * 100).toFixed(0)}% del texto)`));
+  log.info(`  Sin ningun conector            ${inf.sinConector}` + gris(`   (el prefiltro las descartaria)`));
+  log.info('');
+  log.info(`  Superan el umbral ${umbral.toFixed(2)}          ${inf.altasTotal}`);
+  log.info(`    de esas, capturadas          ${verde(String(inf.altasCapturadas))}`);
+  log.info(`    de esas, PERDIDAS            ${inf.altasPerdidas > 0 ? rojo(String(inf.altasPerdidas)) : verde('0')}`);
+  log.info('');
+  log.info(
+    `  ${negrita('Recall del prefiltro')}           ` +
+      (inf.recall === null ? gris('n/d') : negrita(`${(inf.recall * 100).toFixed(1)}%`)),
+  );
+  log.info(`  Ahorro de computo              ${(inf.ahorroComputo * 100).toFixed(0)}%`);
+
+  log.info('');
+  log.info(v.ok ? verde(`  ${v.texto}`) : amarillo(`  ${v.texto}`));
+
+  if (inf.perdidas.length > 0) {
+    log.info(negrita('\nAfirmaciones que el prefiltro habria descartado\n'));
+    for (const p of inf.perdidas.slice(0, 15)) {
+      log.info(`  ${gris(formatearTiempo(p.inicio))}  ${rojo(p.score.toFixed(2))}  ${p.texto}`);
+      log.info(gris(`             ${p.justificacion}`));
+    }
+    if (inf.perdidas.length > 15) {
+      log.info(gris(`  ... y ${inf.perdidas.length - 15} mas. Estan todas en el resultados.json.`));
+    }
+  }
+  log.info('');
 }
 
 async function principal(): Promise<number> {
@@ -324,8 +385,19 @@ async function principal(): Promise<number> {
 
   log.info(negrita('\nAuditor de framing causal') + gris('  -  audita la estructura del argumento, no el hecho\n'));
 
+  if (o.medirPrefiltro) {
+    log.aviso('Modo medicion: se evalua TODO el archivo, sin prefiltro. Va a tardar bastante mas.');
+    log.info(gris('      Lo ya evaluado antes sale de la cache y no se vuelve a pagar.\n'));
+  }
+
   const salida = await ejecutarPipeline(o);
   const url = pathToFileURL(salida.rutaReporte).href;
+
+  if (o.medirPrefiltro) {
+    informarRecall(salida.resultados, o.umbral);
+    log.info(gris(`      Reporte completo: ${salida.rutaReporte}\n`));
+    return 0;
+  }
 
   log.info('');
   log.ok(`Reporte: ${salida.rutaReporte}`);

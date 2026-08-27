@@ -8,7 +8,7 @@
  */
 import type { Afirmacion, SegmentoTranscripcion } from '../tipos.js';
 import { crearDetector, nombreIdioma } from './idioma.js';
-import { marcadoresCausales } from './prefiltro.js';
+
 
 /** Abreviaturas tras las que un punto NO cierra oracion. */
 const ABREVIATURAS = new Set([
@@ -119,10 +119,17 @@ function subdividirLargas(
   return salida;
 }
 
+/**
+ * Gate lexico: dado el texto de una oracion, devuelve los marcadores que la hacen
+ * candidata. Lo aporta el criterio activo; la segmentacion no sabe que busca.
+ */
+export type GateLexico = (texto: string) => string[];
+
 export function segmentarEnAfirmaciones(
   segmentos: SegmentoTranscripcion[],
   idiomaDocumento: string,
   idiomaForzado: string | null = null,
+  gateLexico: GateLexico = () => [],
 ): Afirmacion[] {
   const { texto, anclajes } = construirMapa(segmentos);
   if (!texto) return [];
@@ -142,7 +149,7 @@ export function segmentarEnAfirmaciones(
     if (!/\p{L}/u.test(bruto)) continue;
 
     const idioma = detector.detectar(bruto);
-    const marcadores = marcadoresCausales(bruto);
+    const marcadores = gateLexico(bruto);
     const indice = afirmaciones.length;
 
     afirmaciones.push({

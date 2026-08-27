@@ -1,0 +1,20 @@
+# Normalizacion de finales de linea.
+# Por defecto LF en el repositorio; git decide que poner en el disco de cada quien.
+* text=auto eol=lf
+
+# Los wrappers de Windows TIENEN que llegar con CRLF: cmd.exe no siempre
+# interpreta bien las etiquetas (:label) de un .cmd guardado con LF.
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Subtitulos y transcripciones: texto, pero sin tocar nada raro.
+*.srt text eol=lf
+*.vtt text eol=lf
+
+# Binarios, por si alguna vez entran al repo.
+*.png binary
+*.jpg binary
+*.mp3 binary
+*.mp4 binary
+*.wav binary
+*.onnx binary

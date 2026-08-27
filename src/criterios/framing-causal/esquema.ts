@@ -5,11 +5,22 @@
  * no alcanza para un pipeline sin supervision: aca se extrae, se valida, se normaliza
  * y se registra cada correccion aplicada. Si algo no se puede reparar, se pide reintento.
  */
-import type { EvaluacionLLM, VentanaTemporal } from '../tipos.js';
+import type { ResultadoValidacion } from '../tipos.js';
 
-export type ResultadoValidacion =
-  | { ok: true; evaluacion: EvaluacionLLM; ajustes: string[] }
-  | { ok: false; problema: string };
+/**
+ * Ventana temporal declarada por el hablante. Es un campo PROPIO de este criterio:
+ * vive aca y no en los tipos globales, porque otro criterio no tiene por que tenerlo.
+ */
+export type VentanaTemporal = 'ninguna' | 'corta' | 'razonable';
+
+/** Esquema estricto que este criterio le exige al modelo. */
+export interface EvaluacionFramingCausal {
+  tiene_lenguaje_causal_fuerte: boolean;
+  tiene_contrafactual_o_comparacion: boolean;
+  ventana_temporal_mencionada: VentanaTemporal;
+  score_framing_causal: number;
+  justificacion: string;
+}
 
 const CLAVES = [
   'tiene_lenguaje_causal_fuerte',
@@ -85,7 +96,7 @@ function aScore(v: unknown): number | null {
  * Valida y normaliza. Devuelve tambien la lista de ajustes aplicados,
  * para que el reporte pueda mostrar cuando el modelo se salio del esquema.
  */
-export function validarEvaluacion(bruto: unknown): ResultadoValidacion {
+export function validarEvaluacion(bruto: unknown): ResultadoValidacion<EvaluacionFramingCausal> {
   if (typeof bruto !== 'object' || bruto === null || Array.isArray(bruto)) {
     return { ok: false, problema: 'la respuesta no es un objeto JSON' };
   }
@@ -147,7 +158,7 @@ export function validarEvaluacion(bruto: unknown): ResultadoValidacion {
 }
 
 /** Atajo: texto crudo del modelo -> evaluacion validada. */
-export function parsearRespuesta(textoCrudo: string): ResultadoValidacion {
+export function parsearRespuesta(textoCrudo: string): ResultadoValidacion<EvaluacionFramingCausal> {
   const json = extraerJSON(textoCrudo);
   if (!json) return { ok: false, problema: 'no se encontro ningun objeto JSON en la respuesta' };
   try {

@@ -12,9 +12,10 @@ import { EXT_MEDIO, EXT_SUBTITULOS, EXT_TEXTO, VERSION_ESQUEMA } from './config.
 import { descargarAudio, descargarSubtitulos } from './ingesta/descargar.js';
 import { parsearArchivoTexto } from './ingesta/parsear-texto.js';
 import { evaluarAfirmaciones, type MetricasLLM } from './motor/analizar.js';
+import { motorOllama } from './motor/inferencia.js';
+import { obtenerCriterio } from './criterios/registro.js';
 import { CacheEvaluaciones } from './motor/cache.js';
 import { estadoOllama, mensajeAyudaOllama, procesosCargados, tieneModelo } from './motor/ollama.js';
-import { HASH_PROMPT } from './motor/prompt.js';
 import { detectarIdiomaDocumento } from './procesamiento/idioma.js';
 import { segmentarEnAfirmaciones } from './procesamiento/segmentar.js';
 import { escribirReporte } from './reporte/generar.js';
@@ -87,7 +88,7 @@ async function obtenerTranscripcion(
   if (tipo === 'url') {
     if (opciones.preferirSubtitulos) {
       log.paso('2a', 'Buscando subtitulos publicados en el link (evita transcribir)...');
-      const subs = await descargarSubtitulos(opciones.entrada, dir);
+      const subs = await descargarSubtitulos(opciones.entrada, dir, opciones.cookiesNavegador);
       if (subs) {
         log.ok(`Subtitulos descargados: ${path.basename(subs)}`);
         const p = parsearArchivoTexto(subs);
@@ -98,7 +99,7 @@ async function obtenerTranscripcion(
     }
     if (!segmentos) {
       log.paso('2a', 'Descargando audio con yt-dlp (local)...');
-      const d = await descargarAudio(opciones.entrada, dir);
+      const d = await descargarAudio(opciones.entrada, dir, opciones.cookiesNavegador);
       titulo = d.titulo ?? titulo;
       log.ok(`Audio local: ${path.basename(d.ruta)}`);
       log.paso('2b', `Transcribiendo con ${opciones.modeloWhisper} (Transformers.js, en proceso)...`);
@@ -153,7 +154,7 @@ function resumir(
   ejecucion: string,
 ): ResumenAnalisis {
   const evaluados = resultados.filter((r) => r.evaluada && r.evaluacion);
-  const scores = evaluados.map((r) => r.evaluacion!.score_framing_causal);
+  const scores = evaluados.map((r) => r.evaluacion!.score);
   const idiomas: Record<string, number> = {};
   for (const r of resultados) idiomas[r.idiomaNombre] = (idiomas[r.idiomaNombre] ?? 0) + 1;
 
@@ -196,6 +197,8 @@ export interface SalidaPipeline {
 }
 
 export async function ejecutarPipeline(opciones: OpcionesPipeline): Promise<SalidaPipeline> {
+  const criterio = obtenerCriterio(opciones.criterio);
+  const motor = motorOllama(opciones.urlOllama, opciones.modelo);
   const tipo = detectarTipoEntrada(opciones.entrada);
   const hash = hashDeEntrada(opciones.entrada, tipo !== 'url');
   const dir = dirTrabajo(hash);
@@ -209,15 +212,17 @@ export async function ejecutarPipeline(opciones: OpcionesPipeline): Promise<Sali
     throw new Error(await mensajeAyudaOllama(opciones.urlOllama, opciones.modelo, estado));
   }
   log.ok(`Ollama v${estado.version ?? '?'} responde en ${opciones.urlOllama} con "${opciones.modelo}".`);
+  log.detalle(`Criterio de auditoria: ${criterio.nombre} (${criterio.id}) - ${criterio.descripcion}`);
 
   const { transcripcion, titulo } = await obtenerTranscripcion(opciones, tipo, dir);
 
   // --- Segmentacion + prefiltro
-  log.paso(3, 'Segmentando en afirmaciones y aplicando prefiltro causal...');
+  log.paso(3, 'Segmentando en afirmaciones y aplicando el prefiltro del criterio...');
   let afirmaciones: Afirmacion[] = segmentarEnAfirmaciones(
     transcripcion.segmentos,
     transcripcion.idiomaDocumento,
     opciones.idiomaForzado,
+    (texto) => criterio.marcadoresLexicos(texto),
   );
   if (!opciones.usarPrefiltro) {
     afirmaciones = afirmaciones.map((a) => ({ ...a, preseleccionada: true }));
@@ -232,17 +237,30 @@ export async function ejecutarPipeline(opciones: OpcionesPipeline): Promise<Sali
   escribirJSON(path.join(dir, 'afirmaciones.json'), afirmaciones);
 
   const aEvaluar = afirmaciones.filter((a) => a.preseleccionada).length;
-  log.ok(`${afirmaciones.length} afirmaciones; ${aEvaluar} contienen conectores causales y van al modelo.`);
+  if (opciones.usarPrefiltro) {
+    log.ok(`${afirmaciones.length} afirmaciones; ${aEvaluar} tienen marcadores del criterio y van al modelo.`);
+  } else {
+    const conConector = afirmaciones.filter((a) => a.marcadoresHeuristicos.length > 0).length;
+    log.ok(
+      `${afirmaciones.length} afirmaciones; van TODAS al modelo (prefiltro desactivado). ` +
+        `Con conector habrian sido ${conConector}.`,
+    );
+  }
   if (aEvaluar === 0) {
     log.aviso('Ninguna afirmacion supero el prefiltro. Proba con --sin-prefiltro para mandarlas todas.');
   }
 
   // --- Motor de deteccion
-  log.paso(4, `Evaluando framing causal con ${opciones.modelo}` +
+  log.paso(4, `Evaluando "${criterio.nombre}" con ${opciones.modelo}` +
     (opciones.concurrencia > 1 ? ` (concurrencia ${opciones.concurrencia})` : '') + '...');
 
   const cache = opciones.usarCache
-    ? new CacheEvaluaciones(path.join(dir, 'cache-evaluaciones.json'), opciones.modelo, HASH_PROMPT, !opciones.forzar)
+    ? new CacheEvaluaciones(
+        path.join(dir, `cache-${criterio.id}.json`),
+        opciones.modelo,
+        criterio.hashPrompt,
+        !opciones.forzar,
+      )
     : null;
   if (cache && cache.tamano > 0) log.detalle(`Cache de evaluaciones: ${cache.tamano} entradas previas.`);
 
@@ -250,7 +268,7 @@ export async function ejecutarPipeline(opciones: OpcionesPipeline): Promise<Sali
   const { resultados: resultadosAfirmaciones, metricas } = await evaluarAfirmaciones(
     afirmaciones,
     opciones,
-    cache,
+    { criterio, motor, cache },
     (p) => progreso(p.hechas, p.total, p.tokensPorSegundo > 0 ? `${p.tokensPorSegundo} tok/s` : 'cache'),
   );
   const msTotal = Date.now() - t0;
@@ -264,6 +282,7 @@ export async function ejecutarPipeline(opciones: OpcionesPipeline): Promise<Sali
     motorTranscripcion: transcripcion.motor,
     idiomaDocumento: transcripcion.idiomaDocumento,
     modeloLLM: opciones.modelo,
+    criterio: criterio.id,
     timestampsReales: transcripcion.timestampsReales,
     creadoEn: new Date().toISOString(),
     versionEsquema: VERSION_ESQUEMA,
@@ -293,7 +312,10 @@ export async function ejecutarPipeline(opciones: OpcionesPipeline): Promise<Sali
         `El modelo esta corriendo en CPU (${metricas.tokensPorSegundo} tok/s). Es lo que hace que ` +
           `cada afirmacion tarde segundos y no milisegundos.`,
       );
-      log.aviso('Opciones: un modelo mas chico (--modelo qwen2.5:1.5b) o mas paralelismo (--concurrencia 3).');
+      log.aviso(
+        'La palanca util es un modelo mas chico (--modelo qwen2.5:1.5b). Subir --concurrencia ' +
+          'en CPU suele empeorar: cada peticion paralela vuelve a evaluar el prompt de sistema entero.',
+      );
     }
   }
 

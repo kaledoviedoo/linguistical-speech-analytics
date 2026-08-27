@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import { DIR_MODELOS } from '../config.js';
 import type { SegmentoTranscripcion } from '../tipos.js';
 import { log, progreso } from '../utilidades/log.js';
+import { formatearTiempo } from '../utilidades/rutas.js';
 import { cargarAudio, duracionDe, TASA_MUESTREO } from './audio.js';
 
 interface ChunkWhisper {
@@ -52,6 +53,16 @@ export async function transcribirMedio(
   const duracion = duracionDe(muestras);
   log.detalle(`Audio: ${muestras.length} muestras @ ${TASA_MUESTREO} Hz (${duracion.toFixed(1)} s)`);
 
+  // Aviso honesto antes de empezar: en CPU, Whisper tarda del orden de la propia
+  // duracion del audio. Es mejor saberlo antes que mirar una barra 40 minutos.
+  log.info(
+    `      Audio de ${formatearTiempo(duracion)}. En CPU la transcripcion suele tardar ` +
+      `entre la mitad y el doble de eso.`,
+  );
+  if (duracion > 900) {
+    log.aviso('Para material largo de YouTube, --preferir-subtitulos evita este paso por completo.');
+  }
+
   const transcriptor = await obtenerTranscriptor(modeloWhisper);
 
   // chunk_length_s/stride_length_s son los valores recomendados para Whisper:
@@ -64,18 +75,39 @@ export async function transcribirMedio(
   };
   if (idiomaForzado) opciones['language'] = idiomaForzado;
 
-  let ultimoPct = -1;
-  opciones['callback_function'] = () => {
-    // Aproximacion: Transformers.js no expone progreso real por chunk.
-    const pct = Math.min(99, ultimoPct + 1);
-    if (pct !== ultimoPct) {
-      ultimoPct = pct;
-      progreso(pct, 100, 'transcribiendo');
-    }
+  // Progreso real, no inventado: Whisper procesa el audio en ventanas de 30 s que
+  // avanzan 20 s cada una (30 menos el solape de 5 s por lado). Con la duracion del
+  // audio se sabe cuantas ventanas hay, y chunk_callback avisa cuando cae cada una.
+  const PASO_S = 30 - 5 * 2;
+  const ventanasTotales = Math.max(1, Math.ceil(duracion / PASO_S));
+  const t0 = Date.now();
+  let ventanasHechas = 0;
+
+  const etiqueta = (): string => {
+    const transcurrido = (Date.now() - t0) / 1000;
+    if (ventanasHechas === 0) return `${formatearTiempo(transcurrido)} transcurrido`;
+    const restantes = Math.max(0, ventanasTotales - ventanasHechas);
+    const eta = (transcurrido / ventanasHechas) * restantes;
+    return `${formatearTiempo(transcurrido)} transcurrido, faltan ~${formatearTiempo(eta)}`;
   };
 
-  const salida = (await transcriptor(muestras, opciones)) as { text?: string; chunks?: ChunkWhisper[] };
-  progreso(100, 100, 'transcribiendo');
+  opciones['chunk_callback'] = () => {
+    ventanasHechas = Math.min(ventanasTotales, ventanasHechas + 1);
+    progreso(ventanasHechas, ventanasTotales, etiqueta());
+  };
+
+  // Late de fondo: en audios largos pueden pasar decenas de segundos entre ventanas,
+  // y una barra congelada parece un cuelgue.
+  const latido = setInterval(() => progreso(ventanasHechas, ventanasTotales, etiqueta()), 2000);
+  if (typeof latido.unref === 'function') latido.unref();
+
+  let salida: { text?: string; chunks?: ChunkWhisper[] };
+  try {
+    salida = (await transcriptor(muestras, opciones)) as { text?: string; chunks?: ChunkWhisper[] };
+  } finally {
+    clearInterval(latido);
+  }
+  progreso(ventanasTotales, ventanasTotales, etiqueta());
 
   const chunks = salida.chunks ?? [];
   const segmentos: SegmentoTranscripcion[] = [];

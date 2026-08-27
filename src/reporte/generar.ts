@@ -42,10 +42,10 @@ export function construirHTML({ resultados, titulo, duracionSegundos }: DatosRep
     idn: r.idiomaNombre,
     txt: r.texto,
     ev: r.evaluada,
-    sc: r.evaluacion?.score_framing_causal ?? null,
-    cau: r.evaluacion?.tiene_lenguaje_causal_fuerte ?? null,
-    con: r.evaluacion?.tiene_contrafactual_o_comparacion ?? null,
-    ven: r.evaluacion?.ventana_temporal_mencionada ?? null,
+    sc: r.evaluacion?.score ?? null,
+    // El reporte ya no conoce los campos del criterio: recibe marcadores con un tono
+    // y los pinta. Un criterio nuevo se muestra sin tocar una linea de esta plantilla.
+    mk: r.evaluacion?.marcadores ?? null,
     jus: r.evaluacion?.justificacion ?? null,
     mar: r.marcadoresHeuristicos,
     mot: r.motivoOmision ?? null,
@@ -61,6 +61,7 @@ export function construirHTML({ resultados, titulo, duracionSegundos }: DatosRep
     tipoEntrada: resultados.tipoEntrada,
     motorTranscripcion: resultados.motorTranscripcion,
     modeloLLM: resultados.modeloLLM,
+    criterio: resultados.criterio,
     idiomaDocumento: resultados.idiomaDocumento,
     timestampsReales: resultados.timestampsReales,
     creadoEn: resultados.creadoEn,
@@ -123,7 +124,7 @@ export function construirHTML({ resultados, titulo, duracionSegundos }: DatosRep
       </select>
     </div>
     <div class="control interruptores">
-      <label><input type="checkbox" id="solo-causal"> Solo con lenguaje causal fuerte</label>
+      <label><input type="checkbox" id="solo-causal"> Solo las que tienen algún rasgo marcado</label>
       <label><input type="checkbox" id="ver-omitidas"> Mostrar afirmaciones no evaluadas</label>
     </div>
     <div class="control acciones">

@@ -1,19 +1,20 @@
 /**
- * Motor de deteccion: recorre las afirmaciones preseleccionadas y consulta al LLM local.
+ * Bucle de evaluacion.
  *
- * Secuencial por defecto. Con 8 GB de VRAM (o menos) lanzar varias generaciones en
- * paralelo obliga a Ollama a swapear KV-cache y la latencia se dispara. Pero cuando
- * Ollama corre en CPU, o cuando sobra VRAM, subir --concurrencia a 2-4 multiplica el
- * rendimiento: por eso es configurable en vez de estar clavado.
+ * Este modulo ya no sabe QUE se audita ni CON QUE se infiere. Recibe un criterio
+ * (que aporta prompt, esquema y validacion) y un motor de inferencia (que convierte
+ * prompt en texto). Lo que si sabe es lo que de verdad le corresponde: reintentos,
+ * cache, concurrencia y contabilidad de rendimiento.
  *
- * Antes de llamar al modelo se consulta la cache: una afirmacion ya evaluada con el
- * mismo modelo y el mismo prompt no se vuelve a pagar.
+ * Secuencial por defecto. Con poca VRAM, varias generaciones en paralelo obligan a
+ * Ollama a swapear KV-cache. En CPU el efecto es peor todavia: cada slot paralelo
+ * mantiene su propio cache de prefijo, asi que cada uno vuelve a pagar la evaluacion
+ * del prompt de sistema entero.
  */
 import type { Afirmacion, OpcionesCorrida, ResultadoAfirmacion } from '../tipos.js';
+import { empaquetar, type Criterio } from '../criterios/tipos.js';
 import type { CacheEvaluaciones } from './cache.js';
-import { parsearRespuesta } from './esquema.js';
-import { generar } from './ollama.js';
-import { construirPromptCorreccion, construirPromptUsuario, PROMPT_SISTEMA } from './prompt.js';
+import type { MotorInferencia } from './inferencia.js';
 
 export interface ProgresoEvaluacion {
   hechas: number;
@@ -33,49 +34,50 @@ export interface MetricasLLM {
   llamadas: number;
 }
 
+export interface ContextoEvaluacion {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  criterio: Criterio<any>;
+  motor: MotorInferencia;
+  cache: CacheEvaluaciones | null;
+  reintentos: number;
+}
+
 export async function evaluarAfirmacion(
   afirmacion: Afirmacion,
-  opciones: OpcionesCorrida,
-  cache: CacheEvaluaciones | null,
+  ctx: ContextoEvaluacion,
   metricas: MetricasLLM,
 ): Promise<ResultadoAfirmacion> {
-  const enCache = cache?.obtener(afirmacion.texto) ?? null;
+  const enCache = ctx.cache?.obtener(afirmacion.texto) ?? null;
   if (enCache) {
-    return {
-      ...afirmacion,
-      evaluacion: enCache,
-      evaluada: true,
-      desdeCache: true,
-      intentos: 0,
-      msLLM: 0,
-    };
+    return { ...afirmacion, evaluacion: enCache, evaluada: true, desdeCache: true, intentos: 0, msLLM: 0 };
   }
 
   let intentos = 0;
   let msTotal = 0;
   let ultimoProblema = '';
 
-  while (intentos <= opciones.reintentos) {
+  while (intentos <= ctx.reintentos) {
     intentos++;
     const prompt =
       intentos === 1
-        ? construirPromptUsuario(afirmacion.texto, afirmacion.idiomaNombre)
-        : construirPromptCorreccion(afirmacion.texto, afirmacion.idiomaNombre, ultimoProblema);
+        ? ctx.criterio.construirPrompt(afirmacion.texto, afirmacion.idiomaNombre)
+        : ctx.criterio.construirPromptCorreccion(afirmacion.texto, afirmacion.idiomaNombre, ultimoProblema);
 
     try {
-      const r = await generar(opciones.urlOllama, opciones.modelo, PROMPT_SISTEMA, prompt);
+      const r = await ctx.motor.generar(ctx.criterio.promptSistema, prompt);
       msTotal += r.ms;
       metricas.llamadas++;
       metricas.msCargaModelo += r.msCarga;
       metricas.tokensGenerados += r.tokensSalida;
       metricas.msGeneracion += r.msGeneracion;
 
-      const validado = parsearRespuesta(r.texto);
+      const validado = ctx.criterio.validar(r.texto);
       if (validado.ok) {
-        cache?.guardar(afirmacion.texto, validado.evaluacion);
+        const evaluacion = empaquetar(ctx.criterio, validado.evaluacion);
+        ctx.cache?.guardar(afirmacion.texto, evaluacion);
         return {
           ...afirmacion,
-          evaluacion: validado.evaluacion,
+          evaluacion,
           evaluada: true,
           desdeCache: false,
           intentos,
@@ -87,8 +89,8 @@ export async function evaluarAfirmacion(
       ultimoProblema = validado.problema;
     } catch (e) {
       ultimoProblema = (e as Error).message;
-      // Un fallo de red/timeout no se arregla repitiendo el mismo prompt de inmediato.
-      if (intentos <= opciones.reintentos) await new Promise((r) => setTimeout(r, 400));
+      // Un fallo de red o un timeout no se arregla repitiendo el prompt de inmediato.
+      if (intentos <= ctx.reintentos) await new Promise((r) => setTimeout(r, 400));
     }
   }
 
@@ -105,14 +107,15 @@ export async function evaluarAfirmacion(
 
 /**
  * Pool de trabajadores sobre las afirmaciones preseleccionadas.
- * El orden de salida es siempre el original, sin importar en que orden terminen.
+ * El orden de salida es el original, sin importar en que orden terminen.
  */
 export async function evaluarAfirmaciones(
   afirmaciones: Afirmacion[],
-  opciones: OpcionesCorrida,
-  cache: CacheEvaluaciones | null,
+  opciones: Pick<OpcionesCorrida, 'concurrencia' | 'reintentos'>,
+  ctx: Omit<ContextoEvaluacion, 'reintentos'>,
   onProgreso?: (p: ProgresoEvaluacion) => void,
 ): Promise<{ resultados: ResultadoAfirmacion[]; metricas: MetricasLLM }> {
+  const contexto: ContextoEvaluacion = { ...ctx, reintentos: opciones.reintentos };
   const metricas: MetricasLLM = {
     msCargaModelo: 0,
     tokensGenerados: 0,
@@ -134,7 +137,7 @@ export async function evaluarAfirmaciones(
         evaluacion: null,
         evaluada: false,
         desdeCache: false,
-        motivoOmision: 'no contiene ningun conector causal (prefiltro heuristico)',
+        motivoOmision: 'no contiene ningun marcador lexico del criterio (prefiltro)',
         intentos: 0,
         msLLM: 0,
       };
@@ -150,7 +153,7 @@ export async function evaluarAfirmaciones(
       const posicion = siguiente++;
       if (posicion >= pendientes.length) return;
       const indice = pendientes[posicion]!;
-      const r = await evaluarAfirmacion(afirmaciones[indice]!, opciones, cache, metricas);
+      const r = await evaluarAfirmacion(afirmaciones[indice]!, contexto, metricas);
       salida[indice] = r;
       hechas++;
       if (r.desdeCache) metricas.desdeCache++;
@@ -172,6 +175,10 @@ export async function evaluarAfirmaciones(
       ? Number(((metricas.tokensGenerados / metricas.msGeneracion) * 1000).toFixed(1))
       : 0;
 
-  cache?.persistir();
-  return { resultados: salida.map((r, i) => r ?? { ...afirmaciones[i]!, evaluacion: null, evaluada: false, desdeCache: false, intentos: 0, msLLM: 0 }), metricas };
+  ctx.cache?.persistir();
+
+  const resultados = salida.map(
+    (r, i) => r ?? { ...afirmaciones[i]!, evaluacion: null, evaluada: false, desdeCache: false, intentos: 0, msLLM: 0 },
+  );
+  return { resultados, metricas };
 }

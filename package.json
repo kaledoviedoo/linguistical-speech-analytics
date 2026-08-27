@@ -12,6 +12,7 @@
     "analizar": "tsx src/cli.ts",
     "verificar-entorno": "tsx src/cli.ts --verificar-entorno",
     "benchmark": "tsx src/cli.ts --benchmark",
+    "medir": "tsx src/cli.ts --medir-prefiltro --no-abrir",
     "test:prompt": "tsx tests/eval_prompt.ts",
     "test:pipeline": "tsx tests/eval_pipeline.ts",
     "typecheck": "tsc --noEmit"

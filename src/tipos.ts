@@ -1,3 +1,5 @@
+import type { EvaluacionAfirmacion } from './criterios/tipos.js';
+
 /**
  * Tipos compartidos por todo el pipeline.
  *
@@ -41,25 +43,16 @@ export interface Afirmacion {
   idioma: string;
   /** Nombre legible del idioma, para el reporte. */
   idiomaNombre: string;
-  /** Conectores causales detectados por la heuristica rapida. */
+  /** Marcadores lexicos que detecto el prefiltro del criterio activo. */
   marcadoresHeuristicos: string[];
   /** true si supera el prefiltro y debe ir al LLM. */
   preseleccionada: boolean;
 }
 
-export type VentanaTemporal = 'ninguna' | 'corta' | 'razonable';
-
-/** Esquema JSON estricto que debe devolver el LLM local. */
-export interface EvaluacionLLM {
-  tiene_lenguaje_causal_fuerte: boolean;
-  tiene_contrafactual_o_comparacion: boolean;
-  ventana_temporal_mencionada: VentanaTemporal;
-  score_framing_causal: number;
-  justificacion: string;
-}
-
 export interface ResultadoAfirmacion extends Afirmacion {
-  evaluacion: EvaluacionLLM | null;
+  /** Forma universal: score, justificacion y marcadores. Los campos propios del
+   *  criterio quedan dentro, en `campos`, sin que el pipeline los interprete. */
+  evaluacion: EvaluacionAfirmacion | null;
   evaluada: boolean;
   /** true si la evaluacion salio de la cache y no costo computo. */
   desdeCache: boolean;
@@ -105,6 +98,8 @@ export interface Resultados {
   motorTranscripcion: string;
   idiomaDocumento: string;
   modeloLLM: string;
+  /** id del criterio de auditoria con el que se produjo este analisis. */
+  criterio: string;
   timestampsReales: boolean;
   creadoEn: string;
   versionEsquema: number;
@@ -127,5 +122,9 @@ export interface OpcionesCorrida {
   reintentos: number;
   concurrencia: number;
   usarCache: boolean;
+  /** id del criterio de auditoria a aplicar. */
+  criterio: string;
+  /** Navegador del que yt-dlp toma cookies para videos que exigen sesion. */
+  cookiesNavegador: string | null;
   verboso: boolean;
 }

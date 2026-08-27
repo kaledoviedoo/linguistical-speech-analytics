@@ -170,6 +170,11 @@ export const JS_REPORTE = `
   }
   function nivel(sc) { return sc >= 0.8 ? 's-alto' : (sc >= 0.5 ? 's-medio' : 's-bajo'); }
 
+  /** true si el criterio marco al menos un rasgo que RESTA defensa a la afirmacion. */
+  function tieneMarcadorMalo(f) {
+    return (f.mk || []).some(function (m) { return m.tono === 'malo'; });
+  }
+
   // --- cabecera y KPIs -------------------------------------------------
   var partesMeta = [];
   partesMeta.push('Fuente: ' + esc(META.fuente));
@@ -228,7 +233,7 @@ export const JS_REPORTE = `
       if (idi && f.idi !== idi) return false;
       if (q && f.txt.toLowerCase().indexOf(q) === -1) return false;
       if (!f.ev) return verOmitidas;
-      if (soloCausal && !f.cau) return false;
+      if (soloCausal && !tieneMarcadorMalo(f)) return false;
       return f.sc !== null && f.sc >= u;
     });
 
@@ -237,16 +242,15 @@ export const JS_REPORTE = `
     return out;
   }
 
+  // El reporte no sabe que significa cada marcador: el criterio le manda una etiqueta
+  // y un tono, y aca solo se pintan. Un criterio nuevo se muestra sin tocar esto.
+  var CLASE_TONO = { bueno: 'si', malo: 'no', neutro: '' };
+
   function etiquetasDe(f) {
     var e = [];
-    if (f.ev) {
-      e.push('<span class="et ' + (f.cau ? 'no' : 'si') + '">' +
-        (f.cau ? 'causal fuerte' : 'sin causal fuerte') + '</span>');
-      e.push('<span class="et ' + (f.con ? 'si' : 'no') + '">' +
-        (f.con ? 'con contraste' : 'sin contraste') + '</span>');
-      e.push('<span class="et ' + (f.ven === 'razonable' ? 'si' : (f.ven === 'corta' ? 'no' : '')) + '">ventana: ' +
-        esc(f.ven) + '</span>');
-    }
+    (f.mk || []).forEach(function (m) {
+      e.push('<span class="et ' + (CLASE_TONO[m.tono] || '') + '">' + esc(m.etiqueta) + '</span>');
+    });
     (f.mar || []).slice(0, 4).forEach(function (m) {
       e.push('<span class="et heur">' + esc(m) + '</span>');
     });
@@ -289,13 +293,13 @@ export const JS_REPORTE = `
   // --- CSV --------------------------------------------------------------
   function csv() {
     var cab = ['timestamp_inicio', 'timestamp_fin', 'idioma', 'afirmacion', 'score',
-      'causal_fuerte', 'contrafactual_o_comparacion', 'ventana_temporal', 'justificacion', 'marcadores'];
+      'marcadores_del_criterio', 'justificacion', 'marcadores_lexicos'];
     var q = function (v) { return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"'; };
     var lineas = [cab.join(',')];
     visibles().forEach(function (f) {
+      var etiquetas = (f.mk || []).map(function (m) { return m.etiqueta; }).join(' | ');
       lineas.push([f.ts, f.tf, f.idn, f.txt, f.sc === null ? '' : f.sc,
-        f.cau === null ? '' : f.cau, f.con === null ? '' : f.con, f.ven || '',
-        f.jus || f.mot || f.err || '', (f.mar || []).join(' | ')].map(q).join(','));
+        etiquetas, f.jus || f.mot || f.err || '', (f.mar || []).join(' | ')].map(q).join(','));
     });
     return lineas.join('\\n');
   }

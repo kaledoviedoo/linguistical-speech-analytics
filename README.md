@@ -75,7 +75,7 @@ npm run analizar -- ./transcripcion.srt
 Un solo comando: analiza, escribe `./reportes/<hash>.html` y lo **abre en el navegador vía `file://`**.
 No queda ningún proceso corriendo después.
 
-### Los cuatro wrappers de Windows
+### Los wrappers de Windows
 
 | Archivo | Equivale a |
 |---|---|
@@ -84,6 +84,9 @@ No queda ningún proceso corriendo después.
 | `analizar.cmd <entrada>` | `npm run analizar -- <entrada>` |
 | `probar.cmd` | `npm run test:pipeline` y luego `npm run test:prompt` |
 | `benchmark.cmd` | `npm run benchmark` |
+| `medir.cmd <archivo>` | `npm run medir -- <archivo>` |
+
+Los `.cmd` existen porque PowerShell bloquea `npm.ps1`; en cualquier otro shell usá `npm run ...` directamente.
 
 Aceptan las mismas opciones: `.\analizar.cmd discurso.mp3 --idioma es --umbral 0.6`
 
@@ -101,11 +104,14 @@ Aceptan las mismas opciones: `.\analizar.cmd discurso.mp3 --idioma es --umbral 0
     --ollama <url>        URL de Ollama               (por defecto: http://localhost:11434)
     --sin-prefiltro       Manda TODAS las oraciones al modelo (más lento, más recall)
     --preferir-subtitulos Si el link ya tiene subtítulos, úsalos en vez de transcribir
+    --cookies <navegador> Cookies del navegador para YouTube (chrome, edge, firefox, brave)
+    --criterio <id>       Criterio de auditoría (por defecto: framing-causal)
     --forzar              Ignora la caché de ./data y rehace todo
     --no-abrir            No abre el navegador al terminar
 -v, --verboso             Log detallado
     --verificar-entorno   Diagnóstico de Ollama, modelos y binarios locales
     --benchmark           Mide tok/s reales y estima cuánto tardará un discurso
+    --medir-prefiltro     Evalúa TODO el archivo y mide qué se pierde el prefiltro
 -h, --ayuda               Ayuda
 ```
 
@@ -121,6 +127,74 @@ Aceptan las mismas opciones: `.\analizar.cmd discurso.mp3 --idioma es --umbral 0
 | Texto | `.txt` `.md` | si trae marcas `[00:01:23]` las usa; si no, estima tiempos y lo advierte en el reporte |
 
 El idioma se detecta automáticamente y el reporte lo indica **por segmento**.
+
+### Analizar videos: las tres rutas
+
+Para links hacen falta dos binarios que no vienen con el proyecto:
+
+```powershell
+winget install --id yt-dlp.yt-dlp -e
+winget install --id Gyan.FFmpeg -e
+# cerrá y volvé a abrir la terminal para que aparezcan en el PATH
+.\verificar.cmd
+```
+
+Con eso hay tres caminos, de más rápido a más lento:
+
+**1. Link de YouTube que ya tiene subtítulos — segundos.**
+
+```powershell
+.\analizar.cmd "https://www.youtube.com/watch?v=XXXXXXXXXXX" --preferir-subtitulos
+```
+
+Descarga los subtítulos publicados (propios o automáticos) y **se salta Whisper por completo**.
+En una máquina sin GPU esta es casi siempre la opción correcta. Si el video no tiene subtítulos,
+cae solo al camino 2.
+
+**2. Link sin subtítulos, o archivo de audio/video local — minutos.**
+
+```powershell
+.\analizar.cmd "https://www.youtube.com/watch?v=XXXXXXXXXXX"
+.\analizar.cmd "C:\Users\tu-usuario\Videos\discurso.mp4"
+.\analizar.cmd "D:\entrevistas\rueda-de-prensa.mp3" --idioma es
+```
+
+Transcribe con Whisper local. **En CPU esto tarda del orden de la duración del audio**: un video de
+40 minutos puede llevar entre 20 y 80 minutos. El CLI te dice la duración detectada y una estimación
+antes de empezar, y la barra muestra tiempo transcurrido y restante real.
+
+Para probar el flujo sin esperar, recortá el audio primero:
+
+```powershell
+ffmpeg -i discurso.mp4 -t 300 -vn -ac 1 -ar 16000 muestra.wav
+.\analizar.cmd muestra.wav
+```
+
+**3. Ya tenés la transcripción — instantáneo.**
+
+```powershell
+.\analizar.cmd "C:\ruta\transcripcion.srt"
+```
+
+Es también la salida de escape si Whisper te resulta muy lento: transcribí una vez con la herramienta
+que prefieras, guardá el `.srt` y de ahí en adelante el análisis es inmediato.
+
+#### Cuando YouTube pide iniciar sesión
+
+Es cada vez más frecuente (`Sign in to confirm you're not a bot`). yt-dlp puede tomar las cookies del
+navegador que ya usás:
+
+```powershell
+.\analizar.cmd "https://youtu.be/XXXX" --cookies chrome
+```
+
+Acepta `chrome`, `edge`, `firefox`, `brave`. Necesitás tener sesión iniciada en YouTube en ese navegador.
+El CLI detecta este error concreto y te sugiere la opción en vez de escupir el volcado de yt-dlp.
+
+#### Dónde queda cada cosa
+
+El audio descargado, el WAV normalizado y la transcripción quedan en `./data/<hash>/`. Si volvés a
+correr el mismo link, **no se vuelve a descargar ni a transcribir**: se reutiliza. `--forzar` rehace todo.
 
 ---
 
@@ -258,25 +332,58 @@ copiar, mandar por correo o abrir sin conexión.
 ## Tests
 
 ```bash
-npm run test:pipeline   # offline, no necesita Ollama: parseo, segmentación, prefiltro, esquema, reporte
-npm run test:prompt     # 10 afirmaciones sintéticas contra el modelo local
+npm run test:pipeline   # 100 tests offline, no necesitan Ollama
+npm run test:prompt     # 24 afirmaciones de control contra el modelo local
 npm run typecheck       # TypeScript en modo estricto
 ```
 
-`npm run test:prompt` es la **validación inicial**: comprueba que el modelo respeta siempre el esquema
-JSON, que con `temperature: 0` la salida es reproducible, y —de forma informativa— cuánto coincide su
-juicio con la expectativa humana en los 10 casos de control (`tests/afirmaciones-sinteticas.ts`).
-Correlo antes de procesar un archivo entero: cuesta segundos y te dice si el modelo que elegiste sirve.
+`npm run test:prompt` es la **validación del motor**. Corre 24 afirmaciones de control
+(`tests/afirmaciones-sinteticas.ts`) y reporta tres cosas distintas:
+
+1. **Bloqueante:** que el JSON respete siempre el esquema estricto.
+2. **Bloqueante:** que con `temperature: 0` la salida sea reproducible.
+3. **Diagnóstico:** precisión y sensibilidad de **cada campo por separado**, más la matriz de confusión
+   de la ventana temporal.
+
+El punto 3 es el que cambia decisiones. Un agregado tipo «acierta 7 de 10» esconde el error que más
+importa: un modelo puede clavar el score y equivocarse siempre en si hay comparación, y ese sesgo
+invalida la tesis del proyecto sin que se note en el promedio.
 
 ```bash
-npm run test:prompt -- --modelo llama3.2:3b
+npm run test:prompt -- --modelo qwen2.5:1.5b     # comparar modelos
+npm run test:prompt -- --rapido                  # solo los 10 primeros
+npm run test:prompt -- --guardar medidas.json    # para diferenciar entre corridas
 ```
+
+Los casos marcados como difíciles (atribución a terceros, causalidad parcial) se ejecutan y se muestran
+pero **no puntúan**: meter casos ambiguos en el denominador solo ensucia el número.
+
+En CPU las 24 llamadas tardan unos 4 minutos; en GPU, segundos.
+
+### Medir el prefiltro
+
+```bash
+npm run medir -- discurso.srt        # Windows: .\medir.cmd discurso.srt
+```
+
+Evalúa **todas** las oraciones con el modelo, ignorando el prefiltro, y después pregunta cuáles de las
+que superaron el umbral no tenían ningún conector causal: esas son exactamente las que el prefiltro
+habría descartado en silencio. Devuelve el recall, el ahorro de cómputo, y —lo más útil— **la lista de
+las afirmaciones perdidas**, que se lee como una lista de conectores que le faltan a `prefiltro.ts`.
+
+No hacen falta dos corridas: con el prefiltro desactivado cada afirmación sigue trayendo sus marcadores
+heurísticos, así que una sola pasada alcanza. Y como la caché es por texto, lo que ya evaluaste antes no
+se vuelve a pagar.
 
 ---
 
 ## Estructura
 
 ```
+.github/workflows/ci.yml      typecheck + tests offline en Ubuntu y Windows
+.gitattributes                CRLF para los .cmd, LF para el resto
+ROADMAP.md                    plan por fases con criterios de aceptacion
+ARQUITECTURA.md               decisiones de diseño, y las que no se tomaron
 instalar.cmd                  wrappers de Windows: evitan el bloqueo de npm.ps1
 verificar.cmd
 analizar.cmd
@@ -296,19 +403,28 @@ src/
     idioma.ts                 detección de idioma en dos niveles (franc)
     segmentar.ts              oraciones con timestamp interpolado
     prefiltro.ts              conectores causales en 6 idiomas
+  analisis/
+    metricas.ts               precision, sensibilidad, matriz de confusion
+    recall-prefiltro.ts       cuanto se pierde el filtro heuristico
+  criterios/
+    tipos.ts                  la interfaz Criterio y el contrato universal
+    registro.ts               qué criterios existen
+    framing-causal/
+      index.ts                el criterio de framing causal
+      prompt.ts               prompt del sistema con las 5 hipótesis
+      esquema.ts              validación, reparación del JSON y tipos propios
   motor/
-    prompt.ts                 prompt del sistema con las 5 hipótesis
+    inferencia.ts             el motor como puerto; Ollama es una implementación
     ollama.ts                 cliente REST mínimo + métricas de /api/ps
-    esquema.ts                validación y reparación del JSON
     cache.ts                  evaluaciones ya pagadas, invalidadas por modelo y prompt
     analizar.ts               pool de evaluación con reintentos y caché
   reporte/
     generar.ts                ensamblado del HTML
     plantilla.ts              CSS y JS embebidos
 tests/
-  eval_pipeline.ts            tests offline
-  eval_prompt.ts              validación del prompt contra Ollama
-  afirmaciones-sinteticas.ts  los 10 casos de control
+  eval_pipeline.ts            100 tests offline
+  eval_prompt.ts              validación del motor, campo por campo
+  afirmaciones-sinteticas.ts  24 casos de control (22 puntúan, 2 ambiguos)
   fixtures/                   discurso-es.srt, speech-en.vtt
 ```
 
@@ -384,6 +500,74 @@ en `.models/`. Además la transcripción en CPU es lenta: para un video de YouTu
   música o varias voces superpuestas.
 - **Fuera de alcance por diseño:** verificación de hechos, traducción, servidores persistentes, bases de
   datos externas y cualquier clave de API en la nube.
+
+---
+
+## Publicar en GitHub
+
+El proyecto ya está listo para publicarse: `.gitignore` deja fuera `data/`, `reportes/`, `.models/` y
+`node_modules/`; `.gitattributes` fuerza CRLF en los `.cmd` (si no, `cmd.exe` puede no leer las
+etiquetas) y LF en todo lo demás; y `.github/workflows/ci.yml` corre typecheck y los tests offline en
+Ubuntu y Windows con Node 20 y 22, sin necesitar Ollama.
+
+```bash
+git add .
+git commit -m "Auditor de framing causal: pipeline local completo"
+gh repo create auditor-framing-causal --public --source=. --push
+# o, sin gh:
+#   git remote add origin https://github.com/<usuario>/auditor-framing-causal.git
+#   git push -u origin main
+```
+
+Verificá antes de publicar que no se cuele material analizado:
+
+```bash
+git status --short        # no deberían aparecer data/ ni reportes/
+```
+
+### Sobre "deployar"
+
+**Este proyecto no se despliega, y es a propósito.** No hay servidor, ni base de datos, ni claves de
+API: el "deploy" es que alguien clone el repo y corra `npm install`. Montar un servicio web que reciba
+videos rompería las tres garantías centrales — que el material nunca sale de la máquina, que no hay
+costos de infraestructura, y que el reporte es un archivo que se puede leer sin conexión.
+
+Lo que sí tiene sentido publicar:
+
+| En vez de | Hacé esto |
+|---|---|
+| Un servidor que analice videos | El repo en GitHub; cada persona corre el suyo |
+| Una demo online | Subí un `reportes/<hash>.html` de ejemplo a GitHub Pages: es un archivo estático autocontenido |
+| Binarios instalables | Un GitHub Release con el `.zip` del repo, si querés versionar |
+
+Un reporte generado es un único HTML sin dependencias externas, así que publicarlo en Pages, mandarlo
+por correo o abrirlo desde un pendrive funciona igual.
+
+---
+
+## Extender: criterios de auditoría
+
+El sistema audita **estructuras argumentales**, en plural. El framing causal es el primer criterio, no
+el único posible. Un criterio junta en una carpeta todo lo específico de una pregunta —el prompt, el
+esquema, la validación, el gate léxico del prefiltro y cómo se muestra— y el resto del pipeline no
+sabe nada de su contenido.
+
+Agregar uno nuevo (apelación a autoridad, generalización desde una anécdota, falso dilema):
+
+1. Crear `src/criterios/<id>/` con `prompt.ts`, `esquema.ts` e `index.ts`.
+2. Implementar la interfaz `Criterio<T>`.
+3. Registrarlo en `src/criterios/registro.ts`.
+
+El pipeline, la caché, la concurrencia, el reporte y el medidor de recall funcionan sin cambios.
+Se selecciona con `--criterio <id>`. El detalle está en [ARQUITECTURA.md](ARQUITECTURA.md).
+
+---
+
+## Qué sigue
+
+El plan de trabajo, con criterios de aceptación medibles por fase, está en [ROADMAP.md](ROADMAP.md).
+Las decisiones de diseño —y las que deliberadamente no se tomaron— en
+[ARQUITECTURA.md](ARQUITECTURA.md).
 
 ---
 
