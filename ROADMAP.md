@@ -9,7 +9,7 @@ concreto: algo que se pueda medir, no una sensación de que "ya está mejor".
 
 | Componente | Estado | Cómo se verificó |
 |---|---|---|
-| Parseo `.srt` / `.vtt` / `.txt` | ✅ | 77 tests offline |
+| Parseo `.srt` / `.vtt` / `.txt` | ✅ | 117 tests offline |
 | Segmentación en afirmaciones con timestamp | ✅ | timestamps monótonos, cues cortados se reúnen |
 | Detección de idioma por segmento | ✅ | español e inglés en los fixtures |
 | Prefiltro causal (263 conectores, 6 idiomas) | ✅ | participios, tildes, control negativo |
@@ -17,7 +17,10 @@ concreto: algo que se pueda medir, no una sensación de que "ya está mejor".
 | Validador y reparación de JSON | ✅ | markdown, enums, escala 0-100, incoherencias |
 | Caché de evaluaciones | ✅ | invalidación por modelo y por prompt |
 | Reporte HTML autocontenido | ✅ | render headless, filtros, escapado de XSS |
-| Métricas por campo del motor | ✅ | 77 tests offline |
+| Métricas por campo del motor | ✅ | 117 tests offline |
+| Criterio como unidad extensible | ✅ | dos criterios corriendo sobre el mismo pipeline |
+| Motor de inferencia como puerto | ✅ | el bucle se testea sin servidor HTTP |
+| Criterio `apelacion-autoridad` | ✅ | 12 casos de control, reporte verificado |
 | Medición del recall del prefiltro | ✅ herramienta lista | falta correrla sobre material real |
 | Transcripción Whisper local | ⚠️ binarios ya instalados, **sin ejecutar todavía** | pendiente Fase A |
 | Descarga de links con yt-dlp | ⚠️ binarios ya instalados, **sin ejecutar todavía** | pendiente Fase A |
@@ -90,12 +93,34 @@ ventana pero sin comparación (`c15`) y causal con comparación pero sin plazo (
 Dos casos (`d01`, `d02`) están marcados como ambiguos a propósito: se ejecutan y se muestran, pero no
 puntúan. Meter casos discutibles en el denominador solo ensucia el número.
 
+El arnés además dejó de ser causal: cada caso declara qué espera por clave y la comparación es
+genérica, así que el criterio de apelación a autoridad se mide con el mismo comando.
+
 Lo que queda:
 
-- Anotar afirmaciones **reales** (no sintéticas) y sumarlas al conjunto.
+- Anotar afirmaciones **reales** (no sintéticas) y sumarlas a los dos conjuntos.
 - Fijar un umbral mínimo de exactitud por campo que CI pueda verificar cuando haya un Ollama disponible.
 
 **Criterio de aceptación:** un umbral por campo acordado y documentado, con la corrida que lo respalda.
+
+---
+
+## Fase B2 — Medir el prefiltro del criterio nuevo
+
+El gate léxico de apelación a autoridad se escribió más selectivo que el causal a propósito: «el
+informe» o «los datos» a secas aparecen todo el tiempo en discurso económico sin ser apelaciones a
+autoridad. Esa decisión hay que verificarla igual que la otra.
+
+Hay una limitación conocida que conviene medir: el prefiltro está afinado para el patrón **sospechoso**,
+así que las afirmaciones bien fundadas («el informe del Banco Central de marzo, sobre una muestra de
+1.200 empresas…») no llegan al modelo. Para el objetivo de la herramienta está bien —esas puntuarían
+bajo de todos modos— pero significa que el reporte no muestra los buenos ejemplos.
+
+```powershell
+.\medir.cmd discurso.srt --criterio apelacion-autoridad
+```
+
+**Criterio de aceptación:** un número de recall para este criterio, con el mismo umbral del 5%.
 
 ---
 

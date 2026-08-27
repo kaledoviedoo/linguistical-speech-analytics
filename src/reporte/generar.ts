@@ -30,9 +30,11 @@ export interface DatosReporte {
   resultados: Resultados;
   titulo: string | null;
   duracionSegundos: number | null;
+  /** Identidad del criterio, para que el reporte no tenga que conocerlo. */
+  criterio: { id: string; nombre: string; descripcion: string; alcance: string };
 }
 
-export function construirHTML({ resultados, titulo, duracionSegundos }: DatosReporte): string {
+export function construirHTML({ resultados, titulo, duracionSegundos, criterio }: DatosReporte): string {
   const filas = resultados.resultados.map((r) => ({
     id: r.id,
     t: r.inicio,
@@ -62,6 +64,9 @@ export function construirHTML({ resultados, titulo, duracionSegundos }: DatosRep
     motorTranscripcion: resultados.motorTranscripcion,
     modeloLLM: resultados.modeloLLM,
     criterio: resultados.criterio,
+    criterioNombre: criterio.nombre,
+    criterioDescripcion: criterio.descripcion,
+    criterioAlcance: criterio.alcance,
     idiomaDocumento: resultados.idiomaDocumento,
     timestampsReales: resultados.timestampsReales,
     creadoEn: resultados.creadoEn,
@@ -85,7 +90,7 @@ export function construirHTML({ resultados, titulo, duracionSegundos }: DatosRep
 
   <header class="cabecera">
     <div>
-      <p class="kicker">Auditoría de estructura argumental</p>
+      <p class="kicker">Auditoría de estructura argumental &middot; <span id="kicker-criterio"></span></p>
       <h1>${escaparHTML(nombreVisible)}</h1>
       <p class="sub" id="sub-meta"></p>
     </div>
@@ -96,9 +101,9 @@ export function construirHTML({ resultados, titulo, duracionSegundos }: DatosRep
 
   <div class="aviso" role="note">
     <strong>Este sistema evalúa la estructura del argumento, no verifica la veracidad del hecho.</strong>
-    <span>Un score alto significa que la afirmación presenta una relación causal fuerte sin los marcadores
-    que la harían defendible (comparación, contrafactual o ventana temporal razonable). No significa que
-    la afirmación sea falsa, ni que sea verdadera: eso queda fuera del alcance de esta herramienta.</span>
+    <span id="aviso-criterio"></span>
+    <span>Un score alto no significa que la afirmación sea falsa, ni que sea verdadera: eso queda fuera
+    del alcance de esta herramienta.</span>
   </div>
 
   <section class="kpis" id="kpis"></section>
@@ -172,7 +177,7 @@ export function construirHTML({ resultados, titulo, duracionSegundos }: DatosRep
 
 /** Escribe el reporte en ./reportes/<hash>.html y devuelve la ruta absoluta. */
 export function escribirReporte(datos: DatosReporte): string {
-  const ruta = rutaReporte(datos.resultados.hash);
+  const ruta = rutaReporte(datos.resultados.hash, datos.resultados.criterio);
   fs.writeFileSync(ruta, construirHTML(datos), 'utf8');
   return ruta;
 }

@@ -20,7 +20,7 @@ sin ningún servidor levantado en segundo plano.
 | Requisito | Necesario para | Nota |
 |---|---|---|
 | **Node.js 18.17+** | todo | `node -v` |
-| **Ollama** corriendo en `localhost:11434` | todo | https://ollama.com/download |
+| **Ollama** corriendo en `127.0.0.1:11434` | todo | https://ollama.com/download |
 | Modelo `qwen2.5:3b` | todo | `ollama pull qwen2.5:3b` (~2 GB) |
 | **ffmpeg** | audio y video | no hace falta para `.srt` / `.vtt` / `.txt` |
 | **yt-dlp** | links | no hace falta para archivos locales |
@@ -101,11 +101,11 @@ Aceptan las mismas opciones: `.\analizar.cmd discurso.mp3 --idioma es --umbral 0
     --reintentos <n>      Reintentos ante JSON inválido (por defecto: 2)
     --concurrencia <n>    Peticiones simultáneas a Ollama (por defecto: 1)
     --sin-cache           No reutiliza evaluaciones previas de afirmaciones idénticas
-    --ollama <url>        URL de Ollama               (por defecto: http://localhost:11434)
+    --ollama <url>        URL de Ollama               (por defecto: http://127.0.0.1:11434)
     --sin-prefiltro       Manda TODAS las oraciones al modelo (más lento, más recall)
     --preferir-subtitulos Si el link ya tiene subtítulos, úsalos en vez de transcribir
     --cookies <navegador> Cookies del navegador para YouTube (chrome, edge, firefox, brave)
-    --criterio <id>       Criterio de auditoría (por defecto: framing-causal)
+    --criterio <id>       Criterio de auditoría: framing-causal | apelacion-autoridad
     --forzar              Ignora la caché de ./data y rehace todo
     --no-abrir            No abre el navegador al terminar
 -v, --verboso             Log detallado
@@ -310,11 +310,11 @@ Si el benchmark dice CPU, en orden de impacto:
 ## Salidas
 
 ```
-data/<hash>/transcripcion.json   segmentos con timestamps + idioma + motor usado
-data/<hash>/afirmaciones.json    oraciones individuales, idioma y marcadores heurísticos
-data/<hash>/resultados.json      evaluación completa + resumen + métricas de rendimiento
-data/<hash>/cache-evaluaciones.json  evaluaciones ya pagadas, por texto + modelo + prompt
-reportes/<hash>.html             reporte autocontenido (CSS y JS embebidos)
+data/<hash>/transcripcion.json              compartida entre criterios
+data/<hash>/afirmaciones-<criterio>.json    oraciones, idioma y marcadores léxicos
+data/<hash>/resultados-<criterio>.json      evaluación completa + resumen + rendimiento
+data/<hash>/cache-<criterio>.json           evaluaciones ya pagadas
+reportes/<hash>-<criterio>.html             reporte autocontenido (CSS y JS embebidos)
 ```
 
 El `<hash>` es estable: para archivos es el hash del contenido (renombrarlos no invalida la caché); para
@@ -332,7 +332,7 @@ copiar, mandar por correo o abrir sin conexión.
 ## Tests
 
 ```bash
-npm run test:pipeline   # 100 tests offline, no necesitan Ollama
+npm run test:pipeline   # 117 tests offline, no necesitan Ollama
 npm run test:prompt     # 24 afirmaciones de control contra el modelo local
 npm run typecheck       # TypeScript en modo estricto
 ```
@@ -350,10 +350,14 @@ importa: un modelo puede clavar el score y equivocarse siempre en si hay compara
 invalida la tesis del proyecto sin que se note en el promedio.
 
 ```bash
-npm run test:prompt -- --modelo qwen2.5:1.5b     # comparar modelos
-npm run test:prompt -- --rapido                  # solo los 10 primeros
-npm run test:prompt -- --guardar medidas.json    # para diferenciar entre corridas
+npm run test:prompt -- --modelo qwen2.5:1.5b             # comparar modelos
+npm run test:prompt -- --criterio apelacion-autoridad    # medir el otro criterio
+npm run test:prompt -- --rapido                          # solo los 10 primeros
+npm run test:prompt -- --guardar medidas.json            # para diferenciar entre corridas
 ```
+
+El arnés no conoce los campos de ningún criterio: cada caso de control declara qué espera por clave, y
+la comparación es clave por clave (booleanos a matriz binaria, enums a matriz de N valores).
 
 Los casos marcados como difíciles (atribución a terceros, causalidad parcial) se ejecutan y se muestran
 pero **no puntúan**: meter casos ambiguos en el denominador solo ensucia el número.
@@ -402,17 +406,22 @@ src/
   procesamiento/
     idioma.ts                 detección de idioma en dos niveles (franc)
     segmentar.ts              oraciones con timestamp interpolado
-    prefiltro.ts              conectores causales en 6 idiomas
+    prefiltro.ts              maquinaria genérica del gate léxico
   analisis/
     metricas.ts               precision, sensibilidad, matriz de confusion
     recall-prefiltro.ts       cuanto se pierde el filtro heuristico
   criterios/
     tipos.ts                  la interfaz Criterio y el contrato universal
     registro.ts               qué criterios existen
+    validacion.ts             reparación de JSON compartida por todos los criterios
     framing-causal/
       index.ts                el criterio de framing causal
       prompt.ts               prompt del sistema con las 5 hipótesis
-      esquema.ts              validación, reparación del JSON y tipos propios
+      esquema.ts              validación y tipos propios
+      conectores.ts           263 conectores causales en 6 idiomas
+    apelacion-autoridad/
+      index.ts                el criterio de apelación a autoridad
+      prompt.ts, esquema.ts, marcadores.ts
   motor/
     inferencia.ts             el motor como puerto; Ollama es una implementación
     ollama.ts                 cliente REST mínimo + métricas de /api/ps
@@ -422,9 +431,12 @@ src/
     generar.ts                ensamblado del HTML
     plantilla.ts              CSS y JS embebidos
 tests/
-  eval_pipeline.ts            100 tests offline
-  eval_prompt.ts              validación del motor, campo por campo
-  afirmaciones-sinteticas.ts  24 casos de control (22 puntúan, 2 ambiguos)
+  eval_pipeline.ts            117 tests offline
+  eval_prompt.ts              validación del motor, campo por campo, para cualquier criterio
+  casos-tipos.ts              forma genérica de un caso de control
+  casos-index.ts              qué conjunto le toca a cada criterio
+  afirmaciones-sinteticas.ts  24 casos de framing causal (22 puntúan, 2 ambiguos)
+  afirmaciones-autoridad.ts   12 casos de apelación a autoridad (10 puntúan, 2 ambiguos)
   fixtures/                   discurso-es.srt, speech-en.vtt
 ```
 
@@ -460,10 +472,23 @@ invasiva:
 Ollama no está instalado, o lo instalaste con la terminal ya abierta. Instalá con
 `winget install --id Ollama.Ollama -e`, cerrá la ventana, abrí una nueva y probá `ollama --version`.
 
-**`Ollama esta instalado pero no responde en http://localhost:11434`**
+**`Ollama esta instalado pero no responde en http://127.0.0.1:11434`**
 
 El demonio no está levantado. En Windows suele arrancar solo (icono en la bandeja del sistema); si no,
 `ollama serve` en una terminal aparte.
+
+Si `ollama serve` responde `bind: Only one usage of each socket address...`, entonces sí está
+levantado y el problema es de resolución de nombre o de qué proceso ocupa el puerto:
+
+```powershell
+Get-NetTCPConnection -LocalPort 11434 -State Listen |
+  Select-Object LocalAddress, OwningProcess
+curl.exe -s http://127.0.0.1:11434/api/version
+curl.exe -s http://localhost:11434/api/version
+```
+
+Si `127.0.0.1` contesta y `localhost` no, es IPv6: `localhost` resolvió a `::1` y Ollama escucha en
+IPv4. Por eso el valor por defecto de la herramienta es `127.0.0.1` y no `localhost`.
 
 **`Ollama responde pero no tiene el modelo "qwen2.5:3b"`**
 
@@ -545,21 +570,33 @@ por correo o abrirlo desde un pendrive funciona igual.
 
 ---
 
-## Extender: criterios de auditoría
+## Criterios de auditoría
 
-El sistema audita **estructuras argumentales**, en plural. El framing causal es el primer criterio, no
-el único posible. Un criterio junta en una carpeta todo lo específico de una pregunta —el prompt, el
-esquema, la validación, el gate léxico del prefiltro y cómo se muestra— y el resto del pipeline no
-sabe nada de su contenido.
+El sistema audita **estructuras argumentales**, en plural. Hay dos criterios:
 
-Agregar uno nuevo (apelación a autoridad, generalización desde una anécdota, falso dilema):
+| id | Qué busca | Qué NO dice |
+|---|---|---|
+| `framing-causal` *(por defecto)* | Lenguaje causal fuerte sin comparación, contrafactual ni ventana temporal razonable | Si el hecho ocurrió |
+| `apelacion-autoridad` | Afirmaciones apoyadas en expertos, estudios o el saber común sin fuente identificable ni evidencia concreta | Si la autoridad citada tiene razón |
 
-1. Crear `src/criterios/<id>/` con `prompt.ts`, `esquema.ts` e `index.ts`.
+```bash
+npm run analizar -- discurso.srt --criterio apelacion-autoridad
+npm run test:prompt -- --criterio apelacion-autoridad
+```
+
+Los dos comparten todo el pipeline pero tienen prompt, esquema, prefiltro léxico y conjunto de control
+propios. El mismo discurso se puede analizar con los dos: la transcripción se reutiliza y cada uno
+escribe su propio reporte (`reportes/<hash>-<criterio>.html`).
+
+### Agregar uno nuevo
+
+1. Crear `src/criterios/<id>/` con `prompt.ts`, `esquema.ts`, `marcadores.ts` e `index.ts`.
 2. Implementar la interfaz `Criterio<T>`.
 3. Registrarlo en `src/criterios/registro.ts`.
+4. Escribir su conjunto de control en `tests/` y registrarlo en `tests/casos-index.ts`.
 
 El pipeline, la caché, la concurrencia, el reporte y el medidor de recall funcionan sin cambios.
-Se selecciona con `--criterio <id>`. El detalle está en [ARQUITECTURA.md](ARQUITECTURA.md).
+El detalle —y qué reveló construir el segundo— está en [ARQUITECTURA.md](ARQUITECTURA.md).
 
 ---
 

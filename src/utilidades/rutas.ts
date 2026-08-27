@@ -26,9 +26,13 @@ export function dirTrabajo(hash: string): string {
   return dir;
 }
 
-export function rutaReporte(hash: string): string {
+/**
+ * Un reporte por (entrada, criterio). Sin el criterio en el nombre, analizar el mismo
+ * discurso con dos criterios distintos hacia que el segundo pisara al primero.
+ */
+export function rutaReporte(hash: string, criterio: string): string {
   fs.mkdirSync(DIR_REPORTES, { recursive: true });
-  return path.join(DIR_REPORTES, `${hash}.html`);
+  return path.join(DIR_REPORTES, `${hash}-${criterio}.html`);
 }
 
 export function leerJSON<T>(ruta: string): T | null {

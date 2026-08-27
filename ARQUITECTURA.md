@@ -73,7 +73,7 @@ Medición antes y después:
 | | Antes | Ahora |
 |---|---|---|
 | Módulos de `src/` que conocen los campos causales | 6 | 3, y los tres viven dentro de `criterios/framing-causal/` |
-| Archivos a tocar para agregar un criterio | 6 + el reporte | 1 carpeta nueva + 1 línea en el registro |
+| Archivos a tocar para agregar un criterio | 6 + el reporte + el arnés de tests | 1 carpeta + 1 línea en el registro + su conjunto de control |
 
 ### 2. El motor de inferencia como puerto
 
@@ -98,15 +98,61 @@ backend. Lo que ya no ocurre es que el motor de evaluación lo conozca.
 
 ---
 
+## Qué reveló el segundo criterio
+
+Una abstracción con una sola implementación es una hipótesis, no un diseño. Construir
+**apelación a autoridad** —una pregunta con otros campos, otro enum y otro rastro léxico— puso a
+prueba el contrato. Aguantó, pero dejó cuatro cosas a la vista que solo se ven con dos:
+
+**1. Los reportes se pisaban entre sí.** El hash dependía solo de la entrada, así que analizar el
+mismo discurso con dos criterios sobrescribía el reporte anterior. Ahora la transcripción se comparte
+(es independiente del criterio, y eso es una ventaja: cambiar de criterio no obliga a volver a
+transcribir) pero las afirmaciones, los resultados, la caché y el reporte llevan el id del criterio:
+
+```
+data/<hash>/transcripcion.json                 compartida
+data/<hash>/afirmaciones-<criterio>.json       el prefiltro difiere
+data/<hash>/resultados-<criterio>.json
+data/<hash>/cache-<criterio>.json
+reportes/<hash>-<criterio>.html
+```
+
+**2. La mitad del validador no era causal.** Desenvolver un JSON de entre prosa, aceptar `"si"` como
+booleano, reescalar un score que vino en 0-100: eso le pasa a cualquier criterio con un modelo chico.
+Se movió a `criterios/validacion.ts`. Lo que quedó en cada criterio son sus claves, sus enums y sus
+coherencias propias.
+
+**3. La plantilla del reporte todavía describía un criterio concreto.** El disclaimer decía «una
+relación causal fuerte sin comparación, contrafactual ni ventana temporal», y un KPI decía «prefiltro
+causal». Con el criterio de autoridad eso quedaba directamente mal. Ahora el criterio aporta su
+`descripcion` y su `alcance`, y la plantilla los muestra sin saber qué dicen. Hay un test que verifica
+que el HTML generado no contenga ningún texto específico de un criterio.
+
+**4. El arnés de medición era el último reducto causal.** `eval_prompt.ts` conocía los cinco campos
+por su nombre, así que un criterio nuevo era inmedible. Ahora cada caso de control declara qué espera
+por clave, y el arnés compara clave por clave: los booleanos van a una matriz binaria, los enums a una
+de N valores. No hizo falta que el criterio describa sus campos —los declara el conjunto de control,
+que es donde vive el juicio humano.
+
+Lo que **no** hizo falta tocar para que el criterio nuevo funcione de punta a punta: el pipeline, la
+caché, la concurrencia, los reintentos, la segmentación, el medidor de recall y el CSS del reporte.
+
+---
+
 ## Cómo se agrega un criterio nuevo
 
-1. Crear `src/criterios/<id>/` con `prompt.ts`, `esquema.ts` e `index.ts`.
+1. Crear `src/criterios/<id>/` con `prompt.ts`, `esquema.ts`, `marcadores.ts` e `index.ts`.
 2. Implementar `Criterio<T>`: prompt, validación, `score()`, `justificacion()`,
    `marcadoresLexicos()` y `marcadoresMostrables()`.
 3. Agregarlo al objeto de `registro.ts`.
+4. Escribir su conjunto de control en `tests/` y registrarlo en `tests/casos-index.ts`.
 
 Nada más. El pipeline, la caché, la concurrencia, el prefiltro, el reporte y el medidor de recall
 funcionan sin cambios. Se selecciona con `--criterio <id>`.
+
+El paso 4 no es opcional en la práctica: sin conjunto de control el criterio no se puede medir, y
+`npm run test:prompt -- --criterio <id>` falla con un mensaje que lo dice en vez de fingir que midió
+algo.
 
 El gate léxico merece atención: cada criterio deja su propio rastro. El causal deja «provocó», «por
 culpa de»; uno de apelación a autoridad dejaría «según los expertos», «está demostrado que». Sin un

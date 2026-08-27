@@ -9,14 +9,22 @@ call npm.cmd run test:pipeline
 if errorlevel 1 goto fallo
 
 echo.
-echo === Validacion del prompt contra el modelo local ===
+echo === Criterio 1 de 2: framing causal ===
 echo.
-call npm.cmd run test:prompt
+call npm.cmd run test:prompt -- --criterio framing-causal
 if errorlevel 1 goto fallo
 
+echo.
+echo === Criterio 2 de 2: apelacion a autoridad ===
+echo.
+call npm.cmd run test:prompt -- --criterio apelacion-autoridad
+if errorlevel 1 goto fallo
+
+echo.
+echo Todo verde. Los dos criterios respetan el esquema y son reproducibles.
 exit /b 0
 
 :fallo
 echo.
-echo [ERROR] Algun test fallo. Revisa el detalle de arriba.
+echo [ERROR] Algo fallo. Revisa el detalle de arriba.
 exit /b 1

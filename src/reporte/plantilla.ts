@@ -186,6 +186,10 @@ export const JS_REPORTE = `
   document.getElementById('pie-modelo').textContent = META.modeloLLM;
   document.getElementById('pie-motor').textContent = META.motorTranscripcion;
   document.getElementById('pie-hash').textContent = META.hash;
+  document.getElementById('kicker-criterio').textContent = META.criterioNombre || META.criterio || '';
+  document.getElementById('aviso-criterio').textContent =
+    (META.criterioDescripcion ? 'Este reporte busca: ' + META.criterioDescripcion + ' ' : '') +
+    (META.criterioAlcance || '');
 
   var rend = META.resumen.rendimiento;
   if (rend) {
@@ -202,7 +206,7 @@ export const JS_REPORTE = `
   var R = META.resumen;
   var kpis = [
     [R.totalSegmentos, 'afirmaciones segmentadas'],
-    [R.preseleccionados, 'pasaron el prefiltro causal'],
+    [R.preseleccionados, 'pasaron el prefiltro léxico'],
     [R.evaluados, 'evaluadas por el LLM'],
     [R.sobreUmbral, 'sobre el umbral ' + R.umbralUsado.toFixed(2)],
     [R.scorePromedio.toFixed(2), 'score promedio (evaluadas)']

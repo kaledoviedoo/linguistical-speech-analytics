@@ -24,7 +24,10 @@ export const DIR_MODELOS = process.env.AFC_DIR_MODELOS
   : path.join(RAIZ, '.models');
 
 /** API REST de Ollama corriendo en la maquina del usuario. */
-export const URL_OLLAMA = process.env.AFC_OLLAMA_URL ?? 'http://localhost:11434';
+// 127.0.0.1 y no localhost a proposito: Ollama escucha solo en IPv4 (su OLLAMA_HOST por
+// defecto es 127.0.0.1:11434), mientras que en Windows "localhost" suele resolver primero a
+// ::1. Con el servidor arriba la conexion falla igual, y el sintoma es un "fetch failed" seco.
+export const URL_OLLAMA = process.env.AFC_OLLAMA_URL ?? 'http://127.0.0.1:11434';
 
 /** Modelo LLM ultra-ligero por defecto (~2 GB en VRAM con cuantizacion Q4). */
 export const MODELO_LLM = process.env.AFC_MODELO ?? 'qwen2.5:3b';

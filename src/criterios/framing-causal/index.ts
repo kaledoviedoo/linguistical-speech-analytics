@@ -11,7 +11,7 @@
  * pipeline, ni la cache, ni el reporte.
  */
 import type { Criterio, MarcadorMostrable, ResultadoValidacion } from '../tipos.js';
-import { marcadoresCausales } from '../../procesamiento/prefiltro.js';
+import { GATE_CAUSAL, marcadoresCausales } from './conectores.js';
 import { parsearRespuesta, type EvaluacionFramingCausal } from './esquema.js';
 import {
   construirPromptCorreccion,
@@ -30,6 +30,7 @@ export const criterioFramingCausal: Criterio<EvaluacionFramingCausal> = {
 
   promptSistema: PROMPT_SISTEMA,
   hashPrompt: HASH_PROMPT,
+  totalMarcadoresLexicos: GATE_CAUSAL.total,
 
   construirPrompt: (texto, idioma) => construirPromptUsuario(texto, idioma),
   construirPromptCorreccion: (texto, idioma, problema) =>
@@ -73,5 +74,6 @@ export const criterioFramingCausal: Criterio<EvaluacionFramingCausal> = {
 };
 
 export { PROMPT_SISTEMA, HASH_PROMPT, construirPromptUsuario, construirPromptCorreccion } from './prompt.js';
-export { parsearRespuesta, validarEvaluacion, extraerJSON } from './esquema.js';
+export { parsearRespuesta, validarEvaluacion } from './esquema.js';
+export { marcadoresCausales } from './conectores.js';
 export type { EvaluacionFramingCausal, VentanaTemporal } from './esquema.js';

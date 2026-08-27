@@ -46,6 +46,8 @@ export interface Criterio<T extends object = Record<string, unknown>> {
   /** Prompt de sistema y su huella, para invalidar la cache cuando cambia. */
   promptSistema: string;
   hashPrompt: string;
+  /** Cuantos patrones tiene su gate lexico. Solo informativo, para el diagnostico. */
+  totalMarcadoresLexicos?: number;
 
   construirPrompt(texto: string, idioma: string): string;
   construirPromptCorreccion(texto: string, idioma: string, problema: string): string;

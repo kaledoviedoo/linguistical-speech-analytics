@@ -77,9 +77,19 @@ export async function ejecutar(
 }
 
 /** true si el binario existe y responde a --version. */
+/**
+ * No todos los binarios dicen su version igual. ffmpeg y ffprobe son la excepcion: solo
+ * aceptan `-version` con un guion, y con `--version` salen con codigo 8. Eso hacia que el
+ * diagnostico reportara ffmpeg como ausente estando instalado y en el PATH.
+ */
+export function flagDeVersion(comando: string): string {
+  const excepciones: Record<string, string> = { ffmpeg: '-version', ffprobe: '-version' };
+  return excepciones[comando] ?? '--version';
+}
+
 export async function existeBinario(comando: string): Promise<boolean> {
   try {
-    const r = await ejecutar(comando, ['--version']);
+    const r = await ejecutar(comando, [flagDeVersion(comando)]);
     return r.codigo === 0;
   } catch {
     return false;

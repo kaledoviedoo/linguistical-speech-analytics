@@ -9,14 +9,18 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parsearArchivoTexto, parsearSubtitulos } from '../src/ingesta/parsear-texto.js';
-import { extraerJSON, validarEvaluacion, parsearRespuesta } from '../src/criterios/framing-causal/esquema.js';
+import { validarEvaluacion, parsearRespuesta } from '../src/criterios/framing-causal/esquema.js';
+import { extraerJSON } from '../src/criterios/validacion.js';
+import { criterioApelacionAutoridad } from '../src/criterios/apelacion-autoridad/index.js';
+import { validarEvaluacion as validarAutoridad } from '../src/criterios/apelacion-autoridad/esquema.js';
 import { detectarIdiomaDocumento } from '../src/procesamiento/idioma.js';
-import { marcadoresCausales } from '../src/procesamiento/prefiltro.js';
+import { marcadoresCausales } from '../src/criterios/framing-causal/conectores.js';
 import { segmentarEnAfirmaciones } from '../src/procesamiento/segmentar.js';
 import { construirHTML } from '../src/reporte/generar.js';
 import type { ResultadoAfirmacion, Resultados } from '../src/tipos.js';
 import { formatearTiempo } from '../src/utilidades/rutas.js';
-import { citarWindows, ejecutar } from '../src/utilidades/proceso.js';
+import { citarWindows, ejecutar, flagDeVersion } from '../src/utilidades/proceso.js';
+import { elegirPistaOriginal, esRestoDeDescarga } from '../src/ingesta/descargar.js';
 import { CacheEvaluaciones } from '../src/motor/cache.js';
 import {
   acumular, acumularMatriz, conteoVacio, exactitud, exactitudMatriz,
@@ -187,6 +191,53 @@ comprobar(
 );
 comprobar('Esquema: rechaza texto sin JSON', !parsearRespuesta('no puedo responder eso').ok);
 
+// -------------------------------------------------------------- descargas
+comprobar(
+  'Descarga: los restos .part no se toman por un archivo terminado',
+  esRestoDeDescarga('fuente.webm.part') &&
+    esRestoDeDescarga('fuente.m4a.ytdl') &&
+    esRestoDeDescarga('subs.es.vtt.temp'),
+);
+comprobar(
+  'Descarga: un archivo terminado no se confunde con un resto',
+  !esRestoDeDescarga('fuente.webm') && !esRestoDeDescarga('subs.es.vtt'),
+);
+
+// El caso real que motivo esto: discurso en ingles, con subtitulos publicados en en-US y
+// ~200 "automatic_captions" que son traducciones. Pedir es.* traia una traduccion de YouTube.
+const linkReal = {
+  idioma: 'en',
+  publicados: ['en-US', 'und'],
+  automaticos: ['en-orig', 'en', 'es', 'fr', 'pt', 'de'],
+};
+comprobar(
+  'Pistas: prefiere el subtitulo publicado en el idioma del video',
+  elegirPistaOriginal(linkReal)?.lang === 'en-US' && elegirPistaOriginal(linkReal)?.auto === false,
+  JSON.stringify(elegirPistaOriginal(linkReal)),
+);
+comprobar(
+  'Pistas: sin publicados cae a la ASR original (-orig), no a una traduccion',
+  elegirPistaOriginal({ ...linkReal, publicados: [] })?.lang === 'en-orig',
+  JSON.stringify(elegirPistaOriginal({ ...linkReal, publicados: [] })),
+);
+comprobar(
+  'Pistas: nunca elige un idioma distinto al del video',
+  elegirPistaOriginal({ idioma: 'en', publicados: [], automaticos: ['es', 'fr', 'pt'] }) === null,
+  JSON.stringify(elegirPistaOriginal({ idioma: 'en', publicados: [], automaticos: ['es', 'fr'] })),
+);
+comprobar(
+  'Pistas: un publicado en otro idioma tampoco sirve',
+  elegirPistaOriginal({ idioma: 'es', publicados: ['en-US'], automaticos: [] }) === null,
+);
+comprobar(
+  'Pistas: sin idioma declarado toma el publicado que no sea "und"',
+  elegirPistaOriginal({ idioma: null, publicados: ['und', 'pt-BR'], automaticos: [] })?.lang === 'pt-BR',
+);
+comprobar(
+  'Pistas: sin nada utilizable devuelve null',
+  elegirPistaOriginal({ idioma: 'de', publicados: [], automaticos: [] }) === null,
+);
+
 // ------------------------------------------------------------- subprocesos
 comprobar('Proceso: no cita lo que no lo necesita', citarWindows('ffmpeg') === 'ffmpeg');
 comprobar(
@@ -203,6 +254,16 @@ comprobar(
   'Proceso: escapa comillas internas',
   citarWindows('di "hola"') === '"di \\"hola\\""',
   citarWindows('di "hola"'),
+);
+comprobar(
+  'Proceso: ffmpeg se consulta con -version, no con --version',
+  flagDeVersion('ffmpeg') === '-version' && flagDeVersion('ffprobe') === '-version',
+  `ffmpeg=${flagDeVersion('ffmpeg')} ffprobe=${flagDeVersion('ffprobe')}`,
+);
+comprobar(
+  'Proceso: el resto de los binarios usa --version',
+  flagDeVersion('yt-dlp') === '--version' && flagDeVersion('ollama') === '--version',
+  flagDeVersion('yt-dlp'),
 );
 const eco = await ejecutar(process.execPath, ['-e', 'process.stdout.write(process.argv[1] || "")', 'con espacios & simbolos']);
 comprobar(
@@ -294,7 +355,9 @@ comprobar(
 );
 comprobar(
   'Control: coherencia interna (sin causal fuerte, el rango no puede llegar alto)',
-  CASOS.filter((c) => !c.dificil).every((c) => c.espera.causal || c.espera.score[1] <= 0.5),
+  CASOS.filter((c) => !c.dificil).every(
+    (c) => c.espera.campos['tiene_lenguaje_causal_fuerte'] === true || c.espera.score[1] <= 0.5,
+  ),
 );
 comprobar(
   'Control: cubre los cuatro limites nuevos',
@@ -383,6 +446,70 @@ comprobar(
   JSON.stringify(empaquetada.marcadores),
 );
 
+// --------------------------------- segundo criterio: apelacion a autoridad
+comprobar('Autoridad: el registro lo conoce', obtenerCriterio('apelacion-autoridad').id === 'apelacion-autoridad');
+comprobar('Autoridad: ahora hay dos criterios registrados', listarCriterios().length === 2);
+comprobar(
+  'Autoridad: su gate lexico es propio y no el causal',
+  criterioApelacionAutoridad.marcadoresLexicos('todos los estudios demuestran que funciona').includes('los estudios') &&
+    criterioApelacionAutoridad.marcadoresLexicos('eso provoco la crisis').length === 0,
+);
+comprobar(
+  'Autoridad: el gate causal no dispara con lenguaje de autoridad',
+  criterioFramingCausal.marcadoresLexicos('todo el mundo sabe que es asi').length === 0,
+);
+comprobar(
+  'Autoridad: los dos criterios tienen huellas de prompt distintas',
+  criterioApelacionAutoridad.hashPrompt !== criterioFramingCausal.hashPrompt,
+);
+
+const evalAutoridadValida = {
+  invoca_autoridad: true,
+  fuente_identificable: false,
+  alcance_de_la_evidencia: 'vago',
+  score_autoridad_vaga: 0.85,
+  justificacion: 'Invoca estudios sin nombrar ninguno ni decir cuantos.',
+};
+comprobar('Autoridad: el esquema acepta un objeto valido', validarAutoridad(evalAutoridadValida).ok);
+comprobar(
+  'Autoridad: normaliza el enum de alcance',
+  (() => {
+    const v = validarAutoridad({ ...evalAutoridadValida, alcance_de_la_evidencia: 'ESPECIFICO (con datos)' });
+    return v.ok && v.evaluacion.alcance_de_la_evidencia === 'especifico';
+  })(),
+);
+comprobar('Autoridad: rechaza enum invalido', !validarAutoridad({ ...evalAutoridadValida, alcance_de_la_evidencia: 'quizas' }).ok);
+comprobar(
+  'Autoridad: sin apelacion no puede haber score alto',
+  (() => {
+    const v = validarAutoridad({ ...evalAutoridadValida, invoca_autoridad: false });
+    return v.ok && v.evaluacion.score_autoridad_vaga < 0.3;
+  })(),
+);
+comprobar(
+  'Autoridad: fuente identificable + evidencia especifica baja el score',
+  (() => {
+    const v = validarAutoridad({
+      ...evalAutoridadValida, fuente_identificable: true, alcance_de_la_evidencia: 'especifico',
+    });
+    return v.ok && v.evaluacion.score_autoridad_vaga < 0.3 && v.ajustes.length > 0;
+  })(),
+);
+comprobar(
+  'Autoridad: la reparacion generica de JSON tambien le sirve',
+  (() => {
+    const crudo = 'Claro:\n```json\n' + JSON.stringify({ ...evalAutoridadValida, score_autoridad_vaga: 85 }) + '\n```';
+    const v = criterioApelacionAutoridad.validar(crudo);
+    return v.ok && v.evaluacion.score_autoridad_vaga === 0.85;
+  })(),
+);
+const empaqAutoridad = empaquetar(criterioApelacionAutoridad, evalAutoridadValida as never);
+comprobar('Autoridad: empaqueta al mismo contrato universal', empaqAutoridad.score === 0.85 && empaqAutoridad.criterio === 'apelacion-autoridad');
+comprobar(
+  'Autoridad: sus marcadores tienen otras etiquetas pero el mismo tono',
+  empaqAutoridad.marcadores.some((m) => m.etiqueta === 'fuente sin identificar' && m.tono === 'malo'),
+);
+
 // ------------------------------------- bucle de evaluacion, sin servidor HTTP
 const afirmacionesDemo = segmentarEnAfirmaciones(
   srt.segmentos, 'es', 'es', (t) => criterioFramingCausal.marcadoresLexicos(t),
@@ -432,6 +559,26 @@ comprobar(
   'Motor: con concurrencia 4 el orden y el conteo se mantienen',
   corridaParalela.resultados.length === afirmacionesDemo.length &&
     corridaParalela.resultados.every((r, i) => r.id === afirmacionesDemo[i]?.id),
+);
+
+// --- la prueba de que el bucle es agnostico: mismo codigo, otro criterio ---
+const afirmacionesAutoridad = segmentarEnAfirmaciones(
+  [{ inicio: 0, fin: 6, texto: 'Todos los estudios demuestran que esta politica funciona. La reunion es el jueves.' }],
+  'es', 'es', (t) => criterioApelacionAutoridad.marcadoresLexicos(t),
+);
+const corridaAutoridad = await evaluarAfirmaciones(afirmacionesAutoridad, opcionesDemo, {
+  criterio: criterioApelacionAutoridad,
+  motor: motorDeGuion([JSON.stringify(evalAutoridadValida)]),
+  cache: null,
+});
+comprobar(
+  'Agnostico: el prefiltro selecciona solo la oracion con marcador de autoridad',
+  afirmacionesAutoridad.filter((a) => a.preseleccionada).length === 1,
+  `${afirmacionesAutoridad.filter((a) => a.preseleccionada).length}/${afirmacionesAutoridad.length}`,
+);
+comprobar(
+  'Agnostico: el mismo bucle evalua el criterio nuevo sin cambios',
+  corridaAutoridad.resultados.some((r) => r.evaluacion?.score === 0.85 && r.evaluacion?.criterio === 'apelacion-autoridad'),
 );
 
 // -------------------------------------------------------------------- reporte
@@ -487,7 +634,17 @@ const resultados: Resultados = {
   resultados: simulados,
 };
 
-const html = construirHTML({ resultados, titulo: 'Discurso de prueba', duracionSegundos: 93 });
+const html = construirHTML({
+  resultados,
+  titulo: 'Discurso de prueba',
+  duracionSegundos: 93,
+  criterio: {
+    id: criterioFramingCausal.id,
+    nombre: criterioFramingCausal.nombre,
+    descripcion: criterioFramingCausal.descripcion,
+    alcance: criterioFramingCausal.alcance,
+  },
+});
 comprobar('Reporte: incluye el disclaimer de alcance', html.includes('no verifica la veracidad del hecho'));
 comprobar('Reporte: es autocontenido (sin src/href externos)', !/<(script|link)[^>]+(src|href)=["']?https?:/i.test(html));
 comprobar('Reporte: el umbral por defecto viaja en los metadatos', html.includes('"umbral":0.7'));
@@ -509,6 +666,14 @@ comprobar(
   !html.includes('tiene_lenguaje_causal_fuerte') && !html.includes('ventana_temporal_mencionada'),
 );
 comprobar('Reporte: los marcadores viajan con su tono', html.includes('"tono":'));
+comprobar(
+  'Reporte: el aviso de alcance lo aporta el criterio, no la plantilla',
+  html.includes(criterioFramingCausal.alcance) && html.includes(criterioFramingCausal.descripcion),
+);
+comprobar(
+  'Reporte: la plantilla no describe ningun criterio concreto',
+  !html.includes('relación causal fuerte sin los marcadores') && !html.includes('prefiltro causal'),
+);
 comprobar('Reporte: los datos meta son JSON valido', (() => {
   const bloque = (html.split('<script id="datos-meta" type="application/json">')[1] ?? '').split('</script>')[0] ?? '';
   try {

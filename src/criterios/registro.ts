@@ -8,10 +8,12 @@
  */
 import type { Criterio } from './tipos.js';
 import { criterioFramingCausal } from './framing-causal/index.js';
+import { criterioApelacionAutoridad } from './apelacion-autoridad/index.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const REGISTRO: Record<string, Criterio<any>> = {
   [criterioFramingCausal.id]: criterioFramingCausal,
+  [criterioApelacionAutoridad.id]: criterioApelacionAutoridad,
 };
 
 export const CRITERIO_POR_DEFECTO = criterioFramingCausal.id;

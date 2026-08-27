@@ -1,11 +1,21 @@
 /**
- * Validacion estricta del JSON que devuelve el LLM local.
+ * Esquema y validacion del criterio de framing causal.
  *
- * Un modelo de 3B con format:"json" acierta el esquema casi siempre, pero "casi"
- * no alcanza para un pipeline sin supervision: aca se extrae, se valida, se normaliza
- * y se registra cada correccion aplicada. Si algo no se puede reparar, se pide reintento.
+ * La reparacion generica de salidas de un modelo chico —desenvolver el JSON de entre
+ * prosa, aceptar "si" como booleano, reescalar un score en 0-100— vive en
+ * `criterios/validacion.ts` y la comparten todos los criterios. Aca queda solo lo que
+ * es propio de esta pregunta: las cinco claves, el enum de la ventana temporal y la
+ * coherencia interna que ningun otro criterio tendria.
  */
 import type { ResultadoValidacion } from '../tipos.js';
+import {
+  aBooleano,
+  aScore,
+  clavesFaltantes,
+  exigirJustificacion,
+  extraerJSON,
+  normalizarEnum,
+} from '../validacion.js';
 
 /**
  * Ventana temporal declarada por el hablante. Es un campo PROPIO de este criterio:
@@ -30,66 +40,15 @@ const CLAVES = [
   'justificacion',
 ] as const;
 
-/** Extrae el primer objeto JSON balanceado del texto (por si el modelo agrega prosa o ```json). */
-export function extraerJSON(texto: string): string | null {
-  const limpio = texto.replace(/```json/gi, '').replace(/```/g, '');
-  const inicio = limpio.indexOf('{');
-  if (inicio === -1) return null;
-
-  let profundidad = 0;
-  let enCadena = false;
-  let escapado = false;
-
-  for (let i = inicio; i < limpio.length; i++) {
-    const ch = limpio[i]!;
-    if (enCadena) {
-      if (escapado) escapado = false;
-      else if (ch === '\\') escapado = true;
-      else if (ch === '"') enCadena = false;
-      continue;
-    }
-    if (ch === '"') enCadena = true;
-    else if (ch === '{') profundidad++;
-    else if (ch === '}') {
-      profundidad--;
-      if (profundidad === 0) return limpio.slice(inicio, i + 1);
-    }
-  }
-  return null;
-}
-
-function aBooleano(v: unknown): boolean | null {
-  if (typeof v === 'boolean') return v;
-  if (typeof v === 'number') return v !== 0;
-  if (typeof v === 'string') {
-    const s = v.trim().toLowerCase();
-    if (['true', 'si', 'sí', 'yes', '1', 'verdadero'].includes(s)) return true;
-    if (['false', 'no', '0', 'falso'].includes(s)) return false;
-  }
-  return null;
-}
-
 function aVentana(v: unknown): VentanaTemporal | null {
-  if (typeof v !== 'string') {
-    if (v === null || v === undefined) return 'ninguna';
-    return null;
-  }
-  const s = v
-    .trim()
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
+  const s = normalizarEnum(v);
+  if (s === null) return null;
   if (!s || s.includes('ningun') || s === 'none' || s === 'n/a' || s.includes('no menciona')) return 'ninguna';
   if (s.includes('cort') || s.includes('short') || s.includes('dia') || s.includes('semana')) return 'corta';
-  if (s.includes('razon') || s.includes('reasonable') || s.includes('mes') || s.includes('ano') || s.includes('year'))
+  if (s.includes('razon') || s.includes('reasonable') || s.includes('mes') || s.includes('ano') || s.includes('year')) {
     return 'razonable';
+  }
   return null;
-}
-
-function aScore(v: unknown): number | null {
-  const n = typeof v === 'number' ? v : typeof v === 'string' ? Number.parseFloat(v.replace(',', '.')) : NaN;
-  if (!Number.isFinite(n)) return null;
-  return n;
 }
 
 /**
@@ -103,8 +62,8 @@ export function validarEvaluacion(bruto: unknown): ResultadoValidacion<Evaluacio
   const obj = bruto as Record<string, unknown>;
   const ajustes: string[] = [];
 
-  const faltantes = CLAVES.filter((k) => !(k in obj));
-  if (faltantes.length > 0 && faltantes.length >= 3) {
+  const faltantes = clavesFaltantes(obj, CLAVES);
+  if (faltantes.length >= 3) {
     return { ok: false, problema: `faltan las claves: ${faltantes.join(', ')}` };
   }
 
@@ -122,25 +81,19 @@ export function validarEvaluacion(bruto: unknown): ResultadoValidacion<Evaluacio
     ajustes.push(`ventana normalizada a "${ventana}"`);
   }
 
-  let score = aScore(obj['score_framing_causal']);
+  const score = aScore(obj['score_framing_causal']);
   if (score === null) return { ok: false, problema: 'score_framing_causal no es numerico' };
-  if (score > 1 && score <= 100) {
-    score = score / 100;
-    ajustes.push('score venia en escala 0-100, reescalado a 0-1');
-  }
-  if (score < 0 || score > 1) {
-    score = Math.min(1, Math.max(0, score));
-    ajustes.push('score recortado al rango 0-1');
-  }
+  ajustes.push(...score.ajustes);
+  let valor = score.valor;
 
-  const justificacionBruta = obj['justificacion'];
-  if (typeof justificacionBruta !== 'string' || justificacionBruta.trim().length < 10) {
+  const justificacion = exigirJustificacion(obj['justificacion']);
+  if (justificacion === null) {
     return { ok: false, problema: 'justificacion ausente o demasiado corta (es obligatoria)' };
   }
 
   // Coherencia interna: sin lenguaje causal fuerte el score no puede ser alto.
-  if (!causal && score >= 0.3) {
-    score = 0.2;
+  if (!causal && valor >= 0.3) {
+    valor = 0.2;
     ajustes.push('score bajado a 0.20 por incoherencia: sin lenguaje causal fuerte');
   }
 
@@ -151,8 +104,8 @@ export function validarEvaluacion(bruto: unknown): ResultadoValidacion<Evaluacio
       tiene_lenguaje_causal_fuerte: causal,
       tiene_contrafactual_o_comparacion: contraste,
       ventana_temporal_mencionada: ventana,
-      score_framing_causal: Number(score.toFixed(2)),
-      justificacion: justificacionBruta.trim(),
+      score_framing_causal: Number(valor.toFixed(2)),
+      justificacion,
     },
   };
 }

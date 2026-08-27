@@ -22,7 +22,6 @@ import { ejecutarPipeline, type OpcionesPipeline } from './pipeline.js';
 import type { Resultados } from './tipos.js';
 import { medirRecall, veredicto } from './analisis/recall-prefiltro.js';
 import { formatearTiempo } from './utilidades/rutas.js';
-import { TOTAL_CONECTORES } from './procesamiento/prefiltro.js';
 import { existeBinario, instruccionesInstalacion } from './utilidades/proceso.js';
 import { activarVerboso, amarillo, azul, gris, log, negrita, rojo, verde } from './utilidades/log.js';
 
@@ -185,11 +184,18 @@ async function verificarEntorno(o: Argumentos): Promise<number> {
     log.info(gris('       arrancalo con:  ollama serve'));
   }
 
+  // Sin servidor no se puede saber si el modelo esta o no. Decir "FALTA" seria mentir:
+  // manda a descargar de nuevo algo que probablemente ya este en disco.
   const modeloOk = estado.disponible && tieneModelo(estado.modelos, o.modelo);
-  log.info(`${marca(modeloOk)} Modelo "${o.modelo}"`);
-  if (estado.disponible && !modeloOk) log.info(gris(`       descargalo con:  ollama pull ${o.modelo}`));
-  if (estado.disponible && estado.modelos.length > 0) {
-    log.info(gris(`       modelos instalados: ${estado.modelos.join(', ')}`));
+  if (estado.disponible) {
+    log.info(`${marca(modeloOk)} Modelo "${o.modelo}"`);
+    if (!modeloOk) log.info(gris(`       descargalo con:  ollama pull ${o.modelo}`));
+    if (estado.modelos.length > 0) {
+      log.info(gris(`       modelos instalados: ${estado.modelos.join(', ')}`));
+    }
+  } else {
+    log.info(`${gris('   ?  ')} Modelo "${o.modelo}"` + gris('  sin verificar: el servidor no responde'));
+    log.info(gris('       una vez arriba:  ollama list'));
   }
 
   const ffmpeg = await existeBinario('ffmpeg');
@@ -200,9 +206,15 @@ async function verificarEntorno(o: Argumentos): Promise<number> {
   log.info(`${marca(ytdlp)} yt-dlp` + gris('  (solo para links)'));
   if (!ytdlp) log.info(gris(`       ${instruccionesInstalacion('yt-dlp')}`));
 
-  log.info(`${verde('  OK  ')} Prefiltro lexico cargado` + gris(`  (${TOTAL_CONECTORES} conectores, 6 idiomas)`));
   for (const c of listarCriterios()) {
-    log.info(`${verde('  OK  ')} Criterio "${c.id}"` + gris(`  ${c.descripcion}`));
+    const criterio = obtenerCriterio(c.id);
+    const marca = c.id === o.criterio ? `${verde('  OK  ')}` : `${gris('  ok  ')}`;
+    log.info(
+      `${marca} Criterio "${c.id}"` +
+        gris(`  ${criterio.totalMarcadoresLexicos ?? 0} marcadores lexicos`) +
+        (c.id === o.criterio ? gris('  (activo)') : ''),
+    );
+    log.info(gris(`       ${c.descripcion}`));
   }
 
   const listo = problemaNode === null && estado.disponible && modeloOk;

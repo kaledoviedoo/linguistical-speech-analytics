@@ -90,10 +90,17 @@ async function obtenerTranscripcion(
       log.paso('2a', 'Buscando subtitulos publicados en el link (evita transcribir)...');
       const subs = await descargarSubtitulos(opciones.entrada, dir, opciones.cookiesNavegador);
       if (subs) {
-        log.ok(`Subtitulos descargados: ${path.basename(subs)}`);
-        const p = parsearArchivoTexto(subs);
+        const origen = subs.auto ? 'transcripcion automatica de YouTube' : 'publicados por el canal';
+        log.ok(`Subtitulos [${subs.lang}] ${origen}: ${path.basename(subs.ruta)}`);
+        if (subs.auto) {
+          log.aviso(
+            'La ASR de YouTube no puntua de forma fiable. Las afirmaciones pueden quedar mal cortadas;\n' +
+              '      si el resultado se ve troceado, corre sin --preferir-subtitulos para transcribir local.',
+          );
+        }
+        const p = parsearArchivoTexto(subs.ruta);
         segmentos = p.segmentos;
-        motor = `${p.motor}:yt-dlp`;
+        motor = `${p.motor}:yt-dlp-${subs.auto ? 'asr' : 'publicados'}`;
         timestampsReales = p.timestampsReales;
       }
     }
@@ -234,7 +241,7 @@ export async function ejecutarPipeline(opciones: OpcionesPipeline): Promise<Sali
       a.preseleccionada && !permitidas.has(a.id) ? { ...a, preseleccionada: false } : a,
     );
   }
-  escribirJSON(path.join(dir, 'afirmaciones.json'), afirmaciones);
+  escribirJSON(path.join(dir, `afirmaciones-${criterio.id}.json`), afirmaciones);
 
   const aEvaluar = afirmaciones.filter((a) => a.preseleccionada).length;
   if (opciones.usarPrefiltro) {
@@ -289,7 +296,7 @@ export async function ejecutarPipeline(opciones: OpcionesPipeline): Promise<Sali
     resumen,
     resultados: resultadosAfirmaciones,
   };
-  escribirJSON(path.join(dir, 'resultados.json'), resultados);
+  escribirJSON(path.join(dir, `resultados-${criterio.id}.json`), resultados);
 
   if (resumen.fallidos > 0) {
     log.aviso(`${resumen.fallidos} afirmaciones no obtuvieron un JSON valido tras ${opciones.reintentos + 1} intentos.`);
@@ -325,6 +332,12 @@ export async function ejecutarPipeline(opciones: OpcionesPipeline): Promise<Sali
     resultados,
     titulo,
     duracionSegundos: transcripcion.duracionSegundos,
+    criterio: {
+      id: criterio.id,
+      nombre: criterio.nombre,
+      descripcion: criterio.descripcion,
+      alcance: criterio.alcance,
+    },
   });
 
   return { rutaReporte: ruta, resultados, hash };
