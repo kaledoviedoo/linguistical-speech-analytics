@@ -1,7 +1,7 @@
 # Auditor de framing causal
 
 Analiza discursos y declaraciones políticas o económicas (español, inglés y otros idiomas) y detecta
-afirmaciones que usan **lenguaje causal fuerte** — *"X causó Y"*, *"X provocó Y"* — **sin los marcadores
+afirmaciones que usan **lenguaje causal fuerte** — *"X causó Y"*, *"X provocó Y"*  **sin los marcadores
 lingüísticos que hacen defendible una afirmación causal**: comparación, contrafactual o ventana temporal
 razonable.
 
@@ -34,7 +34,7 @@ CPU y todo va unas 10 veces mas lento: medilo con `npm run benchmark`. Ver [Rend
 
 ### Windows (PowerShell)
 
-PowerShell bloquea por defecto el script `npm.ps1`, así que el repo trae wrappers `.cmd` que lo evitan
+PowerShell bloquea por defecto el script `npm.ps1`, así que el repo trae unos wrappers `.cmd` que lo evitan
 por completo. **No hace falta cambiar ninguna política ni ser administrador.**
 
 ```powershell
@@ -50,8 +50,8 @@ Antes hace falta tener **Node.js** (https://nodejs.org, versión LTS) y **Ollama
 winget install --id Ollama.Ollama -e
 ```
 
-Después de instalar cualquiera de los dos, **cerrá y volvé a abrir la terminal** — si no, el PATH de la
-sesión actual no los ve.
+Después de instalar cualquiera de los dos, **cierra y vuelve a abrir la terminal** — si no, el PATH de la
+sesión actual no los va a poder ver.
 
 ### macOS y Linux
 
@@ -164,7 +164,7 @@ Transcribe con Whisper local. **En CPU esto tarda del orden de la duración del 
 40 minutos puede llevar entre 20 y 80 minutos. El CLI te dice la duración detectada y una estimación
 antes de empezar, y la barra muestra tiempo transcurrido y restante real.
 
-Para probar el flujo sin esperar, recortá el audio primero:
+Para probar el flujo sin esperar, recorta el audio primero:
 
 ```powershell
 ffmpeg -i discurso.mp4 -t 300 -vn -ac 1 -ar 16000 muestra.wav
@@ -238,7 +238,7 @@ Cada afirmación produce exactamente esto, y nada más:
 ```
 
 La **justificación es obligatoria**: si falta o es demasiado corta, la respuesta se descarta y se reintenta.
-El validador (`src/motor/esquema.ts`) además extrae el JSON aunque venga envuelto en prosa o en un bloque
+El validador (`src/motor/esquema.ts`) además extrae el JSON aunque venga envuelto en un bloque
 markdown, normaliza variantes del enum (`"corta (días/semanas)"` → `"corta"`), reescala scores que vengan
 en 0–100 y corrige incoherencias (sin lenguaje causal fuerte, el score no puede ser alto). Cada corrección
 queda registrada y se muestra en el reporte.
@@ -363,7 +363,7 @@ la comparación es clave por clave (booleanos a matriz binaria, enums a matriz d
 Los casos marcados como difíciles (atribución a terceros, causalidad parcial) se ejecutan y se muestran
 pero **no puntúan**: meter casos ambiguos en el denominador solo ensucia el número.
 
-En CPU las 24 llamadas tardan unos 4 minutos; en GPU, segundos.
+En CPU las 24 llamadas tardan unos 4 minutos; en GPU, unos cuantos segundos.
 
 ### Medir el prefiltro
 
@@ -675,7 +675,7 @@ El detalle —y qué reveló construir el segundo— está en [ARQUITECTURA.md](
 ## Qué sigue
 
 El plan de trabajo, con criterios de aceptación medibles por fase, está en [ROADMAP.md](ROADMAP.md).
-Las decisiones de diseño —y las que deliberadamente no se tomaron— en
+Las decisiones de diseño (y las que deliberadamente no se tomaron) en
 [ARQUITECTURA.md](ARQUITECTURA.md).
 
 ---
