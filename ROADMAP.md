@@ -235,14 +235,40 @@ curados el modelo daba 100% en `invoca_autoridad`; sobre 224 oraciones reales ma
 algo no es apoyarse en ella como *fuente*, y el conjunto no tenía una sola oración normativa que
 obligara al modelo a distinguirlo.
 
-Las dos peores entraron al conjunto como casos `a11` y `a12`. **Es probable que el 100% de
-`invoca_autoridad` baje en la próxima corrida, y eso es una corrección, no una regresión:** el
-número anterior venía de un conjunto que no representaba el material real.
+Las dos peores entraron al conjunto como `a11` y `a12`. Corrida con ellas dentro (14 casos):
+
+| | antes (12 casos) | ahora (14 casos) |
+|---|---|---|
+| `invoca_autoridad` | 100% | 92% |
+| `fuente_identificable` | 90% | 92% |
+| `alcance_de_la_evidencia` | 90% | **100%** |
+| score en rango | 100% | 83% |
+| todos los campos | 80% | 75% |
+
+**Y los dos casos nuevos PASARON.** El modelo contestó `invoca_autoridad: false` con score 0.00 en
+las dos propuestas normativas. O sea que sabe distinguir «nombrar una institución como ejecutora» de
+«apoyarse en ella como fuente» — cuando el texto le llega limpio y completo.
+
+Eso mueve la hipótesis: los cinco falsos positivos del discurso real **no vienen del juicio del
+modelo, vienen de la entrada.** Las afirmaciones del discurso salieron de una ASR sin puntuación,
+cortadas por pausas cada 240 caracteres, así que varias llegaron como fragmentos o con dos ideas
+pegadas. Es la misma causa que ya habíamos medido en el criterio causal, apareciendo por otro lado.
+
+Hay un error metodológico propio que vale registrar: al pasar las afirmaciones reales al conjunto de
+control las **recorté** para que quedaran cortas, y en `a12` el recorte se llevó justamente la
+cláusula que explicaba la respuesta del modelo («…el derecho internacional, **que es la base de la
+civilización y de la sabiduría de la humanidad condensada en la historia**…»). Esa cláusula sí
+invoca un saber recibido. El caso quedó restaurado verbatim y marcado como difícil: anotar material
+real significa copiarlo tal cual, aunque quede largo, o se está anotando otra cosa.
+
+El caso `a03` también cambió de respuesta respecto de la corrida en la otra máquina — más evidencia
+de que el determinismo no cruza de máquina.
 
 **Criterio de aceptación: cumplido.** El recall crudo de 10% no es el número honesto —el adjudicado
 es 1 hueco real sobre 3 pérdidas atribuibles al gate— pero lo que importa de la fase es lo que
-destapó: una rama sin implementar, un límite estructural documentado y un conjunto de control
-demasiado benévolo.
+destapó: una rama del criterio sin implementar, un límite estructural documentado, un conjunto de
+control demasiado benévolo, y la confirmación de que el corte de la ASR es el cuello de botella real
+de la calidad.
 
 ---
 
@@ -332,8 +358,42 @@ Es donde la herramienta deja de responder "¿cómo argumentó en este discurso?"
 
 `.gitignore`, `.gitattributes` y CI ya están. Ver [Publicar en GitHub](README.md#publicar-en-github).
 
-**Criterio de aceptación:** CI en verde en Ubuntu y Windows, y un clon limpio que llegue a un reporte
-siguiendo solo el README.
+**El proyecto está en condiciones de publicarse.** Lo que queda abierto —la ruta de Whisper local,
+ampliar el conjunto de control, comparar discursos entre sí— es trabajo futuro documentado, no deuda
+que bloquee. Un repositorio se publica cuando alguien puede clonarlo y llegar a un resultado
+siguiendo el README, y eso ya funciona en dos máquinas distintas.
+
+**Criterio de aceptación:** CI en verde en Ubuntu y Windows, y un clon limpio que llegue a un
+reporte siguiendo solo el README. Lo segundo ya se verificó a mano en la máquina con GPU.
+
+---
+
+## Lo que se midió, en una tabla
+
+Todo lo de abajo salió de correr la herramienta sobre material real, no de suponer.
+
+| qué | número | dónde |
+|---|---|---|
+| Ahorro de cómputo del prefiltro | 92-98% | Fase B |
+| Huecos reales del gate causal en 3 corridas | 2 (`drove`, `and so`) | Fase B |
+| Afirmaciones con marca léxica perdidas, tras corregir | 0 | Fase B |
+| Recorte del prompt causal | 1297 → 502 tokens | optimización |
+| Recorte de la salida | 72 → 21 tokens | optimización |
+| Aceleración en CPU | 3,1× | 9,1 s → 2,9 s por afirmación |
+| Exactitud del score tras derivarlo | 68% → 91% | conjunto de control |
+| Diferencia CPU vs GPU | 6,7× | 10,3 → 69,0 tok/s |
+| Modelos comparados | 3 | Fase C |
+| Tests offline | 155 | `npm run test:pipeline` |
+
+Bugs encontrados **solo** porque se midió sobre material real, no en tests sintéticos:
+
+1. Subtítulos automáticos «rolling»: cada frase triplicada.
+2. Transcripción sin puntuación: 87 bloques en vez de 372 afirmaciones.
+3. Caché de transcripción sin versión de parser: arreglar el parser no cambiaba nada.
+4. `ffmpeg` consultado con `--version` en vez de `-version`.
+5. `localhost` resolviendo a IPv6 mientras Ollama escucha en IPv4.
+6. Pista de subtítulos en el idioma equivocado: se analizaba una traducción automática.
+7. `%*` expandido dos veces en los `.cmd`: una URL con `&` partía el comando.
 
 ---
 

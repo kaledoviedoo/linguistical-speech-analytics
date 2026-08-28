@@ -180,9 +180,15 @@ export const CASOS_AUTORIDAD: CasoControl[] = [
   {
     id: 'a12',
     idioma: 'es',
+    // VERBATIM del discurso, incluida la clausula del medio. La primera version que
+    // escribi la habia recortado, y justamente ahi estaba lo interesante: "la base de la
+    // civilizacion y de la sabiduria de la humanidad" SI invoca un saber recibido. Sin
+    // esa clausula el caso pasaba y no probaba nada. Anotar material real significa
+    // copiarlo tal cual, aunque quede largo.
     texto:
-      'Las Naciones Unidas deben hacer respetar los tribunales internacionales de justicia ' +
-      'y debe hacer cumplir la sentencia de su justicia.',
+      'Las Naciones Unidas deben hacer respetar los tribunales internacionales de justicia, ' +
+      'el derecho internacional, que es la base de la civilizacion y de la sabiduria de la ' +
+      'humanidad condensada en la historia y debe hacer cumplir la sentencia de su justicia.',
     espera: {
       campos: {
         invoca_autoridad: false,
@@ -191,7 +197,10 @@ export const CASOS_AUTORIDAD: CasoControl[] = [
       },
       score: [0.0, 0.3],
     },
-    nota: 'Otra normativa. El criterio pregunta si la afirmacion SE APOYA en una autoridad, no si la menciona.',
+    nota:
+      'Normativa CON una clausula de saber recibido en el medio. Es el caso limite del criterio: ' +
+      'nombrar a la ONU como ejecutora no invoca autoridad, pero "la sabiduria de la humanidad" si.',
+    dificil: true,
   },
 
   // ---------------------------------------------------- ambiguos a proposito
