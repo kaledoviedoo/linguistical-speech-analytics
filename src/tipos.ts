@@ -30,6 +30,8 @@ export interface Transcripcion {
   timestampsReales: boolean;
   segmentos: SegmentoTranscripcion[];
   creadoEn: string;
+  /** VERSION_PARSEO con la que se genero. Si no coincide, la cache se descarta. */
+  versionParseo?: number;
 }
 
 /** Una afirmacion individual lista para auditar. */

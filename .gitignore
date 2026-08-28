@@ -4,5 +4,8 @@ reportes/
 .cache/
 .models/
 *.log
+
+# Salidas de las mediciones: son de la maquina que las corrio, no del repo.
+medidas-*.json
 .DS_Store
 Thumbs.db

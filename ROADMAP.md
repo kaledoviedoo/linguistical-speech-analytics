@@ -90,8 +90,63 @@ Las tres afirmaciones quedaron como tests fijos: la primera verifica que el gate
 las otras dos son el mejor control negativo del repo —texto real donde el prefiltro acierta al no
 gastar un token—.
 
-**Pendiente:** repetir la medición sobre un segundo discurso, en español, para no generalizar desde
-un solo caso en inglés.
+**Pendiente:** el delta ASR vs subtítulos publicados, sobre el mismo discurso. Ya está todo listo
+para medirlo: `--subtitulos-asr` fuerza la pista automática del mismo video, así que la única
+variable que cambia es la fuente del texto (no el idioma, ni el orador, ni la duración).
+
+Antes de poder medirlo hubo que arreglar dos bugs que hacían inválida cualquier corrida sobre ASR
+—los subtítulos «rolling» y la caché de transcripción sin versión de parser—. Están en
+[Arquitectura](ARQUITECTURA.md#y-lo-que-reveló-medir-la-asr). Estado actual del mismo discurso por
+las dos vías:
+
+| | cues | palabras | afirmaciones |
+|---|---|---|---|
+| subtítulos publicados | 916 | 7092 | 376 |
+| ASR (`--subtitulos-asr`) | 1231 | 7297 | 498 |
+
+Las palabras coinciden dentro del 3%, así que el texto ya no está duplicado. La diferencia en
+afirmaciones es la regla de corte: con puntuación se corta por oraciones (máx. 420 caracteres), sin
+ella por pausas del hablante (máx. 240).
+
+```powershell
+.\medir.cmd "<link>" --subtitulos-asr
+```
+
+### El delta, medido
+
+| | cues | palabras | afirmaciones | con conector | sobre umbral | capturadas | perdidas |
+|---|---|---|---|---|---|---|---|
+| publicados | 916 | 7092 | 376 | 30 (8%) | 6 | 3 | 3 |
+| ASR | 1231 | 7297 | 498 | 29 (6%) | 7 | 3 | 4 |
+
+**El gate dispara 30 veces en el texto publicado y 29 en la ASR, sobre prácticamente las mismas
+palabras.** Ese es el número que responde la pregunta: la ASR no está destruyendo los conectores
+causales. Si los transcribiera mal, el conteo de la derecha caería, y no cae.
+
+Adjudicando las 7 perdidas de las dos corridas:
+
+| afirmación | corrida | veredicto |
+|---|---|---|
+| «…targeting that **drove** innovation overseas…» | publicados | hueco del gate — corregido |
+| «**And so** it for 250 years has been subject to…» | ASR | hueco del gate — corregido |
+| «…this executive order, which came out **ordering** the agencies…» | ambas | falso positivo del modelo |
+| «But the blockade has been 100% successful.» | ambas | falso positivo del modelo |
+| «Under the Biden administration, the spirit of innovation… was under attack» | ASR | causalidad implícita |
+
+Tres cosas salen de acá:
+
+1. **Ningún conector se perdió por culpa de la ASR.** Los dos huecos reales (`drove`, `and so`)
+   estaban igual de ausentes en el texto publicado; la ASR solo los expuso en otra frase. La
+   tolerancia fonética en el prefiltro **no tiene evidencia que la justifique** y queda descartada
+   hasta que aparezca un caso medido.
+2. **Dos falsos positivos del modelo son estables**, aparecen en las dos corridas con el mismo
+   score. No son ruido: son un límite del modelo de 3B, y el prefiltro los está tapando gratis.
+3. **La causalidad implícita es el límite estructural del enfoque léxico.** «Bajo la administración
+   X, Y fue atacado» atribuye causa sin usar una sola palabra causal. No hay conector que agregar:
+   el prefiltro no puede capturarla por construcción, y `--sin-prefiltro` es la única vía.
+
+**Criterio de aceptación: cumplido.** Falta repetir todo sobre un discurso en español, para no
+generalizar desde un solo caso, y con la corrida en español ya arreglada por el desolapado.
 
 ---
 
@@ -110,20 +165,36 @@ selectivo que el causal a propósito y esa decisión hay que verificarla igual.
 
 ## Fase C — Elegir el modelo con datos, no por intuición
 
-Hay tres candidatos razonables y una sola forma honesta de decidir:
+**Preparada, pendiente de correrse en otra máquina.** La de referencia no tiene VRAM suficiente
+(`ollama ps` da `100% CPU` incluso con el modelo de 1.5b, que pesa 1,1 GB contra ~1 GB disponibles),
+así que las tres pasadas del conjunto de control tardarían más de lo razonable acá.
 
-```powershell
-npm.cmd run test:prompt -- --modelo qwen2.5:3b
-npm.cmd run test:prompt -- --modelo qwen2.5:1.5b
-npm.cmd run test:prompt -- --modelo llama3.2:3b
+Es un solo comando, pensado para que quien lo corra no tenga que conocer el arnés por dentro:
+
+```bash
+ollama pull qwen2.5:1.5b
+ollama pull llama3.2:3b
+npm run comparar
 ```
 
-Cada corrida devuelve cumplimiento del esquema (bloqueante), determinismo (bloqueante), **precisión y
-sensibilidad de cada campo por separado**, la matriz de confusión de la ventana temporal, y tok/s.
-`--guardar medidas-<modelo>.json` deja el resultado en disco para poder compararlos.
+Corre el conjunto de control completo contra los tres modelos, deja el JSON crudo de cada uno en
+`medidas-<modelo>-<criterio>.json` y arma la tabla comparativa. Verifica primero que los modelos
+estén descargados y dice cuáles faltan.
 
-**Criterio de aceptación:** una tabla de tres filas en el README y un cambio del modelo por defecto
-si alguno gana claramente en velocidad sin perder cumplimiento del esquema.
+Los dos primeros renglones son **bloqueantes**: un modelo que no respeta el esquema o que no es
+reproducible a temperatura 0 queda descalificado, por rápido que sea. Entre los que pasan, el script
+separa "más exacto" de "más rápido" y cuantifica el intercambio en puntos de exactitud y en
+milisegundos por afirmación, en vez de declarar un ganador solo.
+
+Punto de partida medido en la máquina de referencia (CPU, sin GPU):
+
+| modelo | tok/s | ms por afirmación | notas |
+|---|---|---|---|
+| qwen2.5:3b | 10,3 | 2900 | el actual por defecto |
+| qwen2.5:1.5b | 19,2 | 1550 | 1,9× más rápido, exactitud sin medir |
+
+**Criterio de aceptación:** la tabla de tres filas en el README y un cambio de `MODELO_LLM` en
+`src/config.ts` si alguno gana claramente sin perder cumplimiento del esquema.
 
 ---
 
@@ -179,7 +250,7 @@ siguiendo solo el README.
 | Riesgo | Impacto | Mitigación |
 |---|---|---|
 | Sin GPU, el análisis es lento | Un discurso largo lleva ~20 min | Caché, `--limite`, modelo de 1.5b, `--preferir-subtitulos` |
-| El prefiltro pierde afirmaciones sin conector léxico | Falsos negativos silenciosos | Fase B lo mide; `--sin-prefiltro` como escape |
+| El prefiltro pierde afirmaciones sin conector léxico | Falsos negativos silenciosos | Medido en Fase B: la causalidad implícita («bajo la administración X, Y fue atacado») no tiene rastro léxico y no se puede capturar con conectores. `--sin-prefiltro` es la única vía |
 | Un modelo de 3B se equivoca en casos sutiles | Scores poco fiables individualmente | El reporte lo dice; Fase D lo cuantifica |
 | Whisper transcribe mal audio con música o voces superpuestas | Afirmaciones mal cortadas | Usar subtítulos publicados cuando existan |
 | YouTube endurece las verificaciones anti-bot | Links dejan de descargar | `--cookies <navegador>`; el `.srt` a mano siempre funciona |

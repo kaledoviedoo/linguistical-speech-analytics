@@ -75,6 +75,10 @@ const ENTRADAS: EntradaLexica[] = [
     ['spurred', 'spurred'], ['pushed', 'pushed'], ['forced', 'forced'],
     ['paved the way', 'paved the way'], ['contributed to', 'contributed to'],
     ['gave way to', 'gave way to'], ['set in motion', 'set in motion'],
+    // Hallado en la medicion sobre la pista ASR del mismo discurso: "And so it for 250
+    // years has been subject to...". El gate tenia "therefore" y "consequently" pero no
+    // la forma hablada. Va como bigrama: "so" a secas dispararia con medio discurso.
+    ['and so', 'and so'],
   ]),
 
   ...lista('pt', [

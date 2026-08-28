@@ -16,7 +16,8 @@
     "test:prompt": "tsx tests/eval_prompt.ts",
     "test:pipeline": "tsx tests/eval_pipeline.ts",
     "typecheck": "tsc --noEmit",
-    "latencia": "tsx tests/medir_latencia.ts"
+    "latencia": "tsx tests/medir_latencia.ts",
+    "comparar": "tsx tests/comparar_modelos.ts"
   },
   "dependencies": {
     "@xenova/transformers": "^2.17.2",

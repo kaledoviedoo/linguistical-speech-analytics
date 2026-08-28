@@ -170,6 +170,43 @@ Vale como confirmación de un límite del proyecto: **traducir está fuera de al
 permanente**, y ahora el código lo hace cumplir en vez de confiar en que nadie pida un idioma que
 el video no habla.
 
+### Y lo que reveló medir la ASR
+
+Forzar la pista automática del mismo video (`--subtitulos-asr`) destapó dos cosas más, las dos
+invisibles hasta que alguien contó.
+
+**1. Los subtítulos automáticos son «rolling».** YouTube no entrega cues independientes: entrega la
+pantalla completa en cada cue, arrastrando las líneas anteriores. Concatenados, cada frase aparece
+dos o tres veces.
+
+```
+mismo discurso, subtítulos publicados:   916 cues,  7092 palabras
+mismo discurso, ASR (antes del arreglo): 2339 cues, ~21000 palabras
+mismo discurso, ASR (después):           1231 cues,  7297 palabras   (+2,9%)
+```
+
+El parser ya deduplicaba cues **idénticos** consecutivos; acá el solape es parcial y se arrastra
+varias líneas hacia atrás. El recorte compara contra la **cola del texto ya emitido**, no contra el
+cue vecino: comparando solo con el vecino, la mitad del solape sobrevive. Se activa por archivo, no
+por cue, y solo si más de un tercio de los pares consecutivos se solapan.
+
+El +2,9% final es transcripción legítima: los subtítulos publicados limpian muletillas.
+
+**2. Contar palabras es el chequeo que faltaba.** Comparar cantidad de afirmaciones no servía para
+detectar la duplicación, porque las dos vías se segmentan con reglas distintas a propósito. El
+conteo de palabras no depende del corte, así que es invariante entre vías y delata cualquier texto
+repetido. Ahora sale en la línea de transcripción de cada corrida.
+
+**3. Una caché sin versión miente en silencio.** Con el desolapado ya arreglado, la corrida siguiente
+seguía mostrando 2339 segmentos: `transcripcion.json` guardaba la salida del parser viejo y nadie la
+invalidaba. La caché de evaluaciones ya tenía esa protección —su clave incluye el hash del prompt—
+pero la de transcripción no. Ahora lleva `VERSION_PARSEO` y se descarta sola cuando el parser cambia,
+reparseando el archivo local sin volver a descargar nada.
+
+La regla general que dejan las tres: **toda salida cacheada necesita una huella de lo que la
+produjo.** Sin eso, arreglar el productor no arregla nada y el síntoma sobrevive al arreglo.
+
+
 ---
 
 ## Cómo se agrega un criterio nuevo

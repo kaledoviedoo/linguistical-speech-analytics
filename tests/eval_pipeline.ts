@@ -8,7 +8,7 @@
  */
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parsearArchivoTexto, parsearSubtitulos } from '../src/ingesta/parsear-texto.js';
+import { parsearArchivoTexto, parsearSubtitulos, pareceRolling, largoDelSolape } from '../src/ingesta/parsear-texto.js';
 import { validarEvaluacion, parsearRespuesta, derivarScore } from '../src/criterios/framing-causal/esquema.js';
 import { extraerJSON } from '../src/criterios/validacion.js';
 import { criterioApelacionAutoridad } from '../src/criterios/apelacion-autoridad/index.js';
@@ -144,6 +144,16 @@ comprobar(
   marcadoresCausales(
     'They use weaponization, political weaponization, and constant targeting that drove innovation overseas and they wanted to drive it out.',
   ).includes('drove'),
+);
+comprobar(
+  'Prefiltro (caso real): captura "and so" como consecuencia hablada',
+  marcadoresCausales(
+    'And so it for 250 years has been subject to every single financial services regulation.',
+  ).includes('and so'),
+);
+comprobar(
+  'Prefiltro: "so" a secas no dispara, solo el bigrama "and so"',
+  marcadoresCausales('I was so tired that day and everyone noticed it.').length === 0,
 );
 comprobar(
   'Prefiltro (caso real): no dispara con "the blockade has been 100 percent successful"',
@@ -308,6 +318,38 @@ comprobar(
 comprobar(
   'Pistas: sin nada utilizable devuelve null',
   elegirPistaOriginal({ idioma: 'de', publicados: [], automaticos: [] }) === null,
+);
+
+// ------------------------------------ subtitulos "rolling" de YouTube (ASR)
+// Caso real, encontrado midiendo: la ASR entrega la pantalla completa en cada cue y
+// arrastra las lineas anteriores. El mismo discurso dio 916 cues por subtitulos
+// publicados y 2339 por ASR, con cada frase repetida dos o tres veces.
+const rolling = parsearArchivoTexto('tests/fixtures/asr-rolling-en.vtt');
+const textoRolling = rolling.segmentos.map((x) => x.texto).join(' ');
+comprobar(
+  'ASR rolling: ninguna frase queda repetida',
+  (textoRolling.match(/we fired Joe Biden's rogue/g) ?? []).length === 1 &&
+    (textoRolling.match(/that decision caused/g) ?? []).length === 1,
+  textoRolling,
+);
+comprobar(
+  'ASR rolling: el solape se mide contra la cola emitida, no contra el cue vecino',
+  // Sin esto el cue 3 repite lo que venia del cue 1 y sobrevive la mitad del solape.
+  largoDelSolape('on day one we fired joe bidens rogue sec chair gary', "we fired Joe Biden's rogue SEC Chair Gary Gensler") === 8,
+  String(largoDelSolape('on day one we fired joe bidens rogue sec chair gary', "we fired Joe Biden's rogue SEC Chair Gary Gensler")),
+);
+comprobar(
+  'ASR rolling: los timestamps siguen siendo monotonos',
+  rolling.segmentos.every((x, i) => i === 0 || x.inicio >= rolling.segmentos[i - 1]!.inicio),
+);
+comprobar(
+  'ASR rolling: un subtitulo publicado NO entra por esta rama',
+  pareceRolling(parsearSubtitulos(fs.readFileSync('tests/fixtures/discurso-es.srt', 'utf8'))) === false &&
+    parsearArchivoTexto('tests/fixtures/discurso-es.srt').segmentos.length === 12,
+);
+comprobar(
+  'ASR rolling: dos palabras sueltas iguales no cuentan como solape',
+  largoDelSolape('esto pasa todos los dias', 'y por eso mismo') === 0,
 );
 
 // ------------------------------------------- segmentacion sin puntuacion (ASR)

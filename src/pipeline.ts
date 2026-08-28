@@ -8,7 +8,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { EXT_MEDIO, EXT_SUBTITULOS, EXT_TEXTO, VERSION_ESQUEMA } from './config.js';
+import { EXT_MEDIO, EXT_SUBTITULOS, EXT_TEXTO, VERSION_ESQUEMA, VERSION_PARSEO } from './config.js';
 import { descargarAudio, descargarSubtitulos } from './ingesta/descargar.js';
 import { parsearArchivoTexto } from './ingesta/parsear-texto.js';
 import { evaluarAfirmaciones, type MetricasLLM } from './motor/analizar.js';
@@ -76,8 +76,14 @@ async function obtenerTranscripcion(
   if (!opciones.forzar) {
     const cache = leerJSON<Transcripcion>(rutaCache);
     if (cache && cache.segmentos?.length > 0) {
-      log.ok(`Transcripcion reutilizada de cache (${cache.segmentos.length} segmentos, motor ${cache.motor}).`);
-      return { transcripcion: cache, titulo: tituloCacheado };
+      if ((cache.versionParseo ?? 1) === VERSION_PARSEO) {
+        log.ok(`Transcripcion reutilizada de cache (${cache.segmentos.length} segmentos, motor ${cache.motor}).`);
+        return { transcripcion: cache, titulo: tituloCacheado };
+      }
+      log.aviso(
+        `La transcripcion en cache se genero con un parser anterior (v${cache.versionParseo ?? 1} vs v${VERSION_PARSEO}).\n` +
+          '      Se vuelve a parsear el archivo local; no se descarga nada de nuevo.',
+      );
     }
   }
 
@@ -147,10 +153,18 @@ async function obtenerTranscripcion(
     timestampsReales,
     segmentos,
     creadoEn: new Date().toISOString(),
+    versionParseo: VERSION_PARSEO,
   };
 
   escribirJSON(rutaCache, transcripcion);
-  log.ok(`Transcripcion lista: ${segmentos.length} segmentos, idioma dominante "${idiomaDocumento}".`);
+  // El conteo de palabras es la forma barata de detectar texto duplicado: el mismo
+  // discurso por dos vias distintas tiene que dar practicamente las mismas palabras.
+  // Cuando la ASR llegaba solapada, daba el triple que los subtitulos publicados.
+  const palabras = textoCompleto.split(/\s+/).filter(Boolean).length;
+  log.ok(
+    `Transcripcion lista: ${segmentos.length} segmentos, ${palabras.toLocaleString('es')} palabras, ` +
+      `idioma dominante "${idiomaDocumento}".`,
+  );
   return { transcripcion, titulo };
 }
 

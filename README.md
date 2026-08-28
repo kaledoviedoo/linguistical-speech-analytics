@@ -104,6 +104,7 @@ Aceptan las mismas opciones: `.\analizar.cmd discurso.mp3 --idioma es --umbral 0
     --ollama <url>        URL de Ollama               (por defecto: http://127.0.0.1:11434)
     --sin-prefiltro       Manda TODAS las oraciones al modelo (más lento, más recall)
     --preferir-subtitulos Si el link ya tiene subtítulos, úsalos en vez de transcribir
+    --subtitulos-asr      Fuerza la transcripción automática aunque haya publicados (para medir)
     --cookies <navegador> Cookies del navegador para YouTube (chrome, edge, firefox, brave)
     --criterio <id>       Criterio de auditoría: framing-causal | apelacion-autoridad
     --forzar              Ignora la caché de ./data y rehace todo
@@ -549,6 +550,60 @@ Verificá antes de publicar que no se cuele material analizado:
 ```bash
 git status --short        # no deberían aparecer data/ ni reportes/
 ```
+
+### Correr el proyecto en otra máquina
+
+Todo lo que hace falta está en el repo. En la máquina nueva:
+
+```bash
+git clone https://github.com/<usuario>/auditor-framing-causal.git
+cd auditor-framing-causal
+npm install
+```
+
+Después, Ollama y el modelo (una sola vez):
+
+```bash
+# Windows:  winget install --id Ollama.Ollama -e
+# macOS:    brew install ollama          |   Linux: curl -fsSL https://ollama.com/install.sh | sh
+ollama serve                 # dejalo corriendo en otra terminal
+ollama pull qwen2.5:3b
+```
+
+Y verificá antes de analizar nada:
+
+```bash
+npm run verificar-entorno
+npm run test:pipeline        # 152 tests offline, no necesitan Ollama
+```
+
+`data/` y `reportes/` no viajan en el repo, así que la máquina nueva arranca sin caché: la primera
+corrida de un link vuelve a descargar subtítulos y a evaluar. Si querés llevarte el trabajo ya hecho,
+copiá esas dos carpetas a mano.
+
+### Comparar modelos (Fase C)
+
+La comparación conviene correrla en una máquina con GPU, porque son tres pasadas completas del
+conjunto de control. Es un solo comando:
+
+```bash
+ollama pull qwen2.5:1.5b
+ollama pull llama3.2:3b
+npm run comparar
+```
+
+Corre el conjunto contra los tres modelos, deja el JSON crudo de cada uno en `medidas-*.json` y
+arma la tabla comparativa. Los dos primeros renglones son **bloqueantes**: un modelo que no respeta
+el esquema o que no es reproducible a temperatura 0 no compite, por rápido que sea.
+
+```bash
+npm run comparar -- --modelos qwen2.5:3b,qwen2.5:1.5b   # elegir cuáles
+npm run comparar -- --criterio apelacion-autoridad      # el otro criterio
+```
+
+Si un modelo gana en exactitud y en velocidad a la vez, cambialo por defecto en `src/config.ts`
+(`MODELO_LLM`). Si hay que elegir, el script dice cuánto cuesta cada opción en puntos de exactitud
+y en milisegundos por afirmación.
 
 ### Sobre "deployar"
 

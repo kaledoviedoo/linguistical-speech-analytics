@@ -73,6 +73,18 @@ export const TIMEOUT_OLLAMA_MS = Number(process.env.AFC_TIMEOUT_MS ?? '120000');
 /** Version del esquema de resultados.json, para invalidar caches viejas. */
 export const VERSION_ESQUEMA = 1;
 
+/**
+ * Version del PARSEO de la transcripcion. Se sube a mano cada vez que cambia como se
+ * convierte un .srt/.vtt/audio en segmentos.
+ *
+ * Existe porque ya nos mordio: al arreglar el desolapado de los subtitulos automaticos
+ * de YouTube, la corrida siguiente seguia mostrando 2339 segmentos y 1386 afirmaciones.
+ * El arreglo estaba bien; lo que pasaba es que `transcripcion.json` guardaba el
+ * resultado del parser VIEJO y nadie lo invalidaba. La cache de evaluaciones ya tenia
+ * esta proteccion via el hash del prompt; a la de transcripcion le faltaba.
+ */
+export const VERSION_PARSEO = 2;
+
 /** Extensiones tratadas como audio/video (requieren transcripcion). */
 export const EXT_MEDIO = new Set(['.mp3', '.wav', '.m4a', '.mp4', '.webm', '.ogg', '.flac', '.mkv', '.mov', '.aac', '.opus']);
 
