@@ -139,6 +139,39 @@ caché, la concurrencia, los reintentos, la segmentación, el medidor de recall 
 
 ---
 
+## Qué reveló el primer link real
+
+Los criterios se probaron con archivos `.srt` a mano durante todo el desarrollo. El primer video
+de YouTube rompió una invariante que nadie había escrito porque parecía obvia.
+
+YouTube expone dos cosas bajo el mismo nombre, `automatic_captions`: la transcripción del audio
+original (`en-orig`) y su **traducción automática a unos 200 idiomas** (`es`, `fr`, `pt`, …). La
+ingesta pedía `es.*,en.*,pt.*,fr.*` con la idea de «los idiomas que sabemos analizar». Contra un
+discurso en inglés, eso bajaba la traducción al español.
+
+El fallo era invisible: el reporte se genera perfecto, con timestamps correctos y afirmaciones bien
+cortadas. Solo que la sintaxis analizada es la de un traductor automático, no la del orador. Y el
+prefiltro busca **conectores causales**, que es exactamente lo que una traducción reescribe.
+
+La regla ahora es explícita y está en código, no en una lista de idiomas:
+
+```
+1. subtítulo publicado por el canal, en el idioma del video
+2. si no hay, la ASR del original (sufijo -orig)
+3. si solo hay traducciones -> null, y se transcribe el audio localmente
+```
+
+Se consulta con `yt-dlp -J` antes de bajar nada, se elige **una** pista, y `elegirPistaOriginal()`
+es una función pura con seis tests, incluido el caso real que lo destapó. El reporte además dice si
+la pista era publicada o ASR, porque la ASR no puntúa de forma fiable y eso degrada el corte en
+afirmaciones.
+
+Vale como confirmación de un límite del proyecto: **traducir está fuera de alcance de forma
+permanente**, y ahora el código lo hace cumplir en vez de confiar en que nadie pida un idioma que
+el video no habla.
+
+---
+
 ## Cómo se agrega un criterio nuevo
 
 1. Crear `src/criterios/<id>/` con `prompt.ts`, `esquema.ts`, `marcadores.ts` e `index.ts`.

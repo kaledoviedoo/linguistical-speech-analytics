@@ -102,6 +102,9 @@ export function veredicto(informe: InformeRecall): { ok: boolean; texto: string 
     ok: false,
     texto:
       `El prefiltro pierde el ${((1 - informe.recall) * 100).toFixed(0)}% de las afirmaciones de score alto. ` +
-      'Mira la lista de abajo: cada una es un conector que le falta a src/procesamiento/prefiltro.ts.',
+      'La lista de abajo hay que ADJUDICARLA a mano, una por una. Sin prefiltro el modelo ve ' +
+      'texto sin ningun conector causal y a veces marca causalidad donde no hay ninguna: esas ' +
+      'no son perdidas, son falsos positivos que el prefiltro justamente evita. Las que si ' +
+      'tengan lenguaje causal son conectores que le faltan al gate del criterio.',
   };
 }

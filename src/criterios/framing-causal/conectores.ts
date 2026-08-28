@@ -66,6 +66,15 @@ const ENTRADAS: EntradaLexica[] = [
     ['attributable to', 'attributable to'], ['brought on by', 'brought on by'],
     ['as a consequence', 'as a consequence'], ['blamed', 'blamed'], ['to blame for', 'to blame for'],
     ['created by', 'created by'], ['driven by', 'driven by'],
+    // Hallados midiendo el recall sobre un discurso real (Fase B). El gate tenia
+    // "drove up" y "drove down" pero no "drove" a secas, que es como aparece en
+    // "drove innovation overseas" y "wanted to drive it out".
+    ['drove', 'drove'], ['drive out', 'drive out'], ['drives', 'drives'], ['driving', 'driving'],
+    // Misma familia semantica —verbos de forzar o empujar un efecto— agregados por
+    // analogia con el anterior, no por haber aparecido en la medicion.
+    ['spurred', 'spurred'], ['pushed', 'pushed'], ['forced', 'forced'],
+    ['paved the way', 'paved the way'], ['contributed to', 'contributed to'],
+    ['gave way to', 'gave way to'], ['set in motion', 'set in motion'],
   ]),
 
   ...lista('pt', [

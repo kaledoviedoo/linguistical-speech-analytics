@@ -4,6 +4,14 @@
  * Repara lo mismo que el causal —JSON envuelto en prosa, booleanos escritos como
  * palabras, scores en 0-100— porque eso lo aporta `criterios/validacion.ts`. Lo que
  * es propio de aca son las claves, el enum de tres valores y la coherencia interna.
+ *
+ * A DIFERENCIA DEL CRITERIO CAUSAL, ACA EL SCORE LO DA EL MODELO.
+ *
+ * No es una inconsistencia: es lo que dijo la medicion. En el causal el modelo devolvia
+ * 0.85 en 13 de 22 casos —un score casi constante, inservible para un umbral— y
+ * derivarlo de los tres campos subio el acierto de 68% a 91%. Aca devolvio score en
+ * rango 100% con error medio 0,07, y derivarlo lo habria bajado a 80%. Los dos criterios
+ * comparten el contrato, no la forma en que el modelo los resuelve.
  */
 import type { ResultadoValidacion } from '../tipos.js';
 import {

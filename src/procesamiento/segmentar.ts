@@ -21,6 +21,35 @@ const ABREVIATURAS = new Set([
 const LARGO_MAXIMO = 420;
 const LARGO_MINIMO = 15;
 
+/**
+ * SEGMENTAR TEXTO SIN PUNTUACION (medido sobre un discurso real en espanol)
+ *
+ * La transcripcion automatica de YouTube no puntua. Un discurso de ~30 minutos que en
+ * subtitulos publicados habria dado ~300 oraciones dio 87 bloques de 420 caracteres
+ * cortados donde caia, y el modelo marco CERO afirmaciones sobre el umbral: preguntarle
+ * si "esta afirmacion" usa lenguaje causal sin comparacion, cuando "esta afirmacion" son
+ * cinco afirmaciones distintas pegadas, no tiene respuesta posible.
+ *
+ * El corte por oraciones necesita puntos. Cuando no los hay, la unica senal real de
+ * limite que queda son las PAUSAS del hablante, que los timestamps de los cues si traen.
+ */
+const LARGO_MAXIMO_SIN_PUNTUACION = 240;
+const PAUSA_MINIMA = 0.65;
+/** Prosa puntuada trae del orden de 5-15 terminadores cada 1000 caracteres; la ASR, casi 0. */
+const PUNTUACION_MINIMA_POR_1000 = 3;
+
+/** Terminadores de oracion cada 1000 caracteres. */
+export function densidadDePuntuacion(texto: string): number {
+  if (texto.length === 0) return 0;
+  return ((texto.match(/[.!?\u2026]/g) ?? []).length * 1000) / texto.length;
+}
+
+/** True si la transcripcion no trae puntuacion utilizable para cortar oraciones. */
+export function transcripcionSinPuntuacion(segmentos: SegmentoTranscripcion[]): boolean {
+  const texto = segmentos.map((s) => s.texto).join(' ');
+  return texto.length > 200 && densidadDePuntuacion(texto) < PUNTUACION_MINIMA_POR_1000;
+}
+
 interface Anclaje {
   desde: number; // offset de caracter inclusive
   hasta: number; // offset exclusivo
@@ -94,22 +123,46 @@ function partirEnOraciones(texto: string): { desde: number; hasta: number }[] {
   return cortes;
 }
 
+/**
+ * Corta un rango en pedazos separados por las PAUSAS del hablante. Es el reemplazo del
+ * corte por oraciones cuando no hay puntuacion: un silencio de mas de PAUSA_MINIMA entre
+ * dos cues es el limite mas parecido a un punto que deja el audio.
+ */
+function partirPorPausas(anclajes: Anclaje[], largoTexto: number): { desde: number; hasta: number }[] {
+  if (anclajes.length === 0) return [];
+  const cortes = [0];
+  for (let i = 1; i < anclajes.length; i++) {
+    const previo = anclajes[i - 1]!;
+    const actual = anclajes[i]!;
+    if (actual.inicio - previo.fin >= PAUSA_MINIMA) cortes.push(actual.desde);
+  }
+  const rangos: { desde: number; hasta: number }[] = [];
+  for (let i = 0; i < cortes.length; i++) {
+    const desde = cortes[i]!;
+    const hasta = i + 1 < cortes.length ? cortes[i + 1]! : largoTexto;
+    if (hasta > desde) rangos.push({ desde, hasta });
+  }
+  return rangos;
+}
+
 /** Parte una oracion desmesurada en trozos por comas/puntos y coma, sin perder el mapeo. */
 function subdividirLargas(
   rangos: { desde: number; hasta: number }[],
   texto: string,
+  maximo: number = LARGO_MAXIMO,
 ): { desde: number; hasta: number }[] {
   const salida: { desde: number; hasta: number }[] = [];
   for (const r of rangos) {
-    if (r.hasta - r.desde <= LARGO_MAXIMO) {
+    if (r.hasta - r.desde <= maximo) {
       salida.push(r);
       continue;
     }
     let cursor = r.desde;
-    while (r.hasta - cursor > LARGO_MAXIMO) {
-      const ventana = texto.slice(cursor, cursor + LARGO_MAXIMO);
-      const idx = Math.max(ventana.lastIndexOf('; '), ventana.lastIndexOf(', '));
-      const corte = idx > LARGO_MAXIMO * 0.4 ? cursor + idx + 1 : cursor + LARGO_MAXIMO;
+    while (r.hasta - cursor > maximo) {
+      const ventana = texto.slice(cursor, cursor + maximo);
+      // Sin puntuacion tampoco hay comas: el ultimo espacio evita partir una palabra al medio.
+      const idx = Math.max(ventana.lastIndexOf('; '), ventana.lastIndexOf(', '), ventana.lastIndexOf(' '));
+      const corte = idx > maximo * 0.4 ? cursor + idx + 1 : cursor + maximo;
       salida.push({ desde: cursor, hasta: corte });
       cursor = corte;
       while (cursor < r.hasta && /\s/.test(texto[cursor]!)) cursor++;
@@ -140,7 +193,12 @@ export function segmentarEnAfirmaciones(
   void idiomaDocumento;
   const detector = crearDetector(texto, idiomaForzado);
 
-  const rangos = subdividirLargas(partirEnOraciones(texto), texto);
+  // Con puntuacion se corta por oraciones; sin ella, por las pausas del hablante y con
+  // un largo maximo mucho mas chico, porque cada bloque tiene que ser UNA afirmacion.
+  const sinPuntuacion = transcripcionSinPuntuacion(segmentos);
+  const rangos = sinPuntuacion
+    ? subdividirLargas(partirPorPausas(anclajes, texto.length), texto, LARGO_MAXIMO_SIN_PUNTUACION)
+    : subdividirLargas(partirEnOraciones(texto), texto);
   const afirmaciones: Afirmacion[] = [];
 
   for (const r of rangos) {

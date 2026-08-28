@@ -3,63 +3,67 @@
  *
  * IMPORTANTE (alcance): el modelo NO debe opinar sobre si el hecho es cierto.
  * Solo audita la ESTRUCTURA del argumento: si hay lenguaje causal fuerte y si
- * vienen acompanados de los marcadores que hacen defendible una afirmacion causal
+ * viene acompanado de los marcadores que hacen defendible una afirmacion causal
  * (comparacion / contrafactual / ventana temporal razonable).
  *
- * El prompt esta escrito en espanol pero evalua afirmaciones en cualquier idioma:
- * qwen2.5:3b y llama3.2:3b son multilingues y la tarea es estructural, no semantica.
+ * POR QUE ESTE PROMPT PIDE TAN POCO (medido, no supuesto)
  *
- * Se mantiene corto a proposito: con num_ctx=2048 el prompt + la afirmacion + la
- * respuesta tienen que caber holgadamente, y un contexto chico es lo que permite
- * que esto corra en una GPU de 8 GB al lado de Whisper.
+ * `npm run latencia` sobre la maquina de referencia dio este reparto por llamada:
+ *   generar la respuesta   8114 ms   89%   72 tokens a 8.9 tok/s
+ *   procesar el prompt      943 ms   10%   1296 tokens
+ *
+ * O sea: el tiempo se va casi entero en lo que el modelo ESCRIBE, no en lo que lee.
+ * De esos 72 tokens, mas de la mitad eran la justificacion en prosa y los nombres
+ * largos de las claves. Y de las cinco claves que se pedian, dos eran redundantes:
+ *
+ * - `score_framing_causal`: en 22 afirmaciones reales el modelo devolvio 0.85 trece
+ *   veces y solo 5 valores distintos. No usaba la escala. Derivarlo de los tres campos
+ *   sube el acierto de 68% a 82% y cuesta cero tokens.
+ * - `justificacion`: el modelo ya emitia una plantilla ("Atribucion causal sin
+ *   comparacion ni plazo." aparecio literal cuatro veces). Componerla desde los campos
+ *   da lo mismo, nunca se contradice con ellos, y cuesta cero tokens.
+ *
+ * Quedan tres preguntas cerradas y claves cortas. Tambien se fueron del prompt la
+ * escala de score y los dos criterios de riesgo que solo alimentaban esa escala
+ * (razonamiento motivado, asimetria culpa/merito): pedirle al modelo que pondere algo
+ * que ya no devuelve es pagar tokens de lectura por nada.
+ *
+ * El prompt esta escrito en espanol pero evalua afirmaciones en cualquier idioma:
+ * qwen2.5 es multilingue y la tarea es estructural, no semantica.
  */
 
 import { createHash } from 'node:crypto';
 
-export const PROMPT_SISTEMA = `Sos un auditor de ESTRUCTURA ARGUMENTAL. Analizas UNA afirmacion y devuelves SOLO un objeto JSON.
+export const PROMPT_SISTEMA = `Sos un auditor de ESTRUCTURA ARGUMENTAL. Analizas UNA afirmacion y devolves SOLO un objeto JSON.
 
 REGLA DE ALCANCE (la mas importante): NO evalues si el hecho es verdadero o falso. No sabes si ocurrio. Solo evalues COMO esta construido el argumento.
 
-DEFINICIONES
-- Lenguaje causal fuerte: se afirma que A produjo B de forma directa y sin reservas ("causo", "provoco", "genero", "por culpa de", "caused", "led to", "because of"). NO es causal fuerte si hay hedging real ("puede haber contribuido", "es uno de varios factores", "coincidio con", "se correlaciona").
-- Contrafactual o comparacion: el hablante contrasta con algo. Cuenta si menciona (a) que habria pasado sin A, (b) otro pais/region/sector/gobierno de referencia, (c) el periodo anterior o la tendencia previa, (d) que descarta otras causas, (e) datos de un grupo de control.
-- Ventana temporal: cuanto tiempo pasa entre A y B, segun lo dice el hablante.
-  "ninguna"   = no menciona plazo.
-  "corta"     = dias o semanas (sospechoso para efectos macroeconomicos o sociales, que tardan trimestres).
-  "razonable" = meses, anos, o un rango de fechas explicito coherente con el efecto.
+Respondes tres preguntas cerradas, nada mas.
 
-CRITERIOS DE RIESGO (suben el score)
-1. Causalidad sin contraste: afirma A->B y no compara con nada. Es el patron mas fuerte.
-2. Ventana corta sospechosa: efecto estructural atribuido a algo que paso hace dias o semanas.
-3. Paradoja del matiz: cuanto mas limpia y contundente suena la frase, menos condiciones admite. El matiz explicito BAJA el score; la contundencia sin condiciones lo SUBE.
-4. Razonamiento motivado: la causa senalada coincide con el adversario o el aliado politico del hablante, y no se considera ninguna causa alternativa.
-5. Asimetria culpa/merito: lo malo se atribuye a otro y lo bueno a uno mismo, con el mismo tipo de evidencia (o sin evidencia) en ambos casos.
+1. "causal": el hablante afirma que A produjo B de forma directa y sin reservas ("causo", "provoco", "genero", "por culpa de", "caused", "led to", "because of").
+   Es false si hay hedging real ("puede haber contribuido", "es uno de varios factores", "coincidio con", "se correlaciona").
+   Cuanto mas contundente y sin condiciones suena la frase, mas true; el matiz explicito la vuelve false.
 
-ESCALA score_framing_causal (0.00 a 1.00)
-0.00-0.29  no hay causalidad fuerte, o la hay con comparacion Y ventana razonable.
-0.30-0.59  causalidad fuerte con matiz parcial, o con comparacion pero sin plazo.
-0.60-0.79  causalidad fuerte sin comparacion, plazo ausente o vago.
-0.80-1.00  causalidad fuerte, sin comparacion, sin contrafactual, y ademas ventana corta o culpa/merito asimetrico.
-Si tiene_lenguaje_causal_fuerte es false, el score debe ser menor a 0.30.
+2. "contraste": el hablante contrasta con algo. Es true si menciona (a) que habria pasado sin A, (b) otro pais, region, sector o gobierno de referencia, (c) el periodo anterior o la tendencia previa, (d) que descarta otras causas, (e) datos de un grupo de control.
+
+3. "ventana": cuanto tiempo pasa entre A y B, segun lo dice el hablante.
+   "ninguna"   = no menciona plazo.
+   "corta"     = dias o semanas.
+   "razonable" = meses, anos, o un rango de fechas explicito.
 
 SALIDA
-Devolve UNICAMENTE este JSON, sin texto antes ni despues, sin markdown:
-{"tiene_lenguaje_causal_fuerte": <true|false>, "tiene_contrafactual_o_comparacion": <true|false>, "ventana_temporal_mencionada": "<ninguna|corta|razonable>", "score_framing_causal": <numero 0.0-1.0>, "justificacion": "<UNA sola frase en espanol, maximo 20 palabras, obligatoria, diciendo que marcador falta o esta presente>"}
+Devolve UNICAMENTE este JSON, sin texto antes ni despues, sin markdown, sin explicaciones:
+{"causal": <true|false>, "contraste": <true|false>, "ventana": "<ninguna|corta|razonable>"}
 
-La justificacion es OBLIGATORIA, va siempre en espanol, y habla de la estructura (que comparacion falta, que plazo se dio), nunca de si el hecho es cierto.
-Se BREVE: una frase, maximo 20 palabras. Nada de preambulos ni repetir la afirmacion.
+EJEMPLOS
+"La inflacion se disparo por culpa de las politicas del gobierno anterior."
+{"causal": true, "contraste": false, "ventana": "ninguna"}
 
-EJEMPLO 1
-Afirmacion: "La inflacion se disparo por culpa de las politicas del gobierno anterior."
-{"tiene_lenguaje_causal_fuerte": true, "tiene_contrafactual_o_comparacion": false, "ventana_temporal_mencionada": "ninguna", "score_framing_causal": 0.85, "justificacion": "Atribucion causal unica sin comparar con el periodo previo ni indicar plazo."}
+"Since the tax cut in 2019, employment rose 4% here, compared with 1% in neighbouring states over the same three years."
+{"causal": false, "contraste": true, "ventana": "razonable"}
 
-EJEMPLO 2
-Afirmacion: "Since the tax cut in 2019, employment rose 4% here, compared with 1% in neighbouring states over the same three years."
-{"tiene_lenguaje_causal_fuerte": false, "tiene_contrafactual_o_comparacion": true, "ventana_temporal_mencionada": "razonable", "score_framing_causal": 0.15, "justificacion": "Da un grupo de comparacion explicito y una ventana de tres anos."}
-
-EJEMPLO 3
-Afirmacion: "El desempleo bajo dos semanas despues de que firmamos el decreto."
-{"tiene_lenguaje_causal_fuerte": true, "tiene_contrafactual_o_comparacion": false, "ventana_temporal_mencionada": "corta", "score_framing_causal": 0.9, "justificacion": "Infiere causa por sucesion en dos semanas, plazo demasiado corto, y sin comparacion."}`;
+"El desempleo bajo dos semanas despues de que firmamos el decreto."
+{"causal": true, "contraste": false, "ventana": "corta"}`;
 
 /**
  * Huella del prompt del sistema. Sirve para invalidar la cache de evaluaciones
@@ -77,6 +81,6 @@ export function construirPromptCorreccion(afirmacion: string, idioma: string, pr
   return (
     `${construirPromptUsuario(afirmacion, idioma)}\n\n` +
     `Tu respuesta anterior fue invalida (${problema}). ` +
-    `Devolve solo el objeto JSON con las 5 claves exactas y nada mas.`
+    `Devolve solo el objeto JSON con las 3 claves exactas (causal, contraste, ventana) y nada mas.`
   );
 }

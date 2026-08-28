@@ -9,15 +9,16 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parsearArchivoTexto, parsearSubtitulos } from '../src/ingesta/parsear-texto.js';
-import { validarEvaluacion, parsearRespuesta } from '../src/criterios/framing-causal/esquema.js';
+import { validarEvaluacion, parsearRespuesta, derivarScore } from '../src/criterios/framing-causal/esquema.js';
 import { extraerJSON } from '../src/criterios/validacion.js';
 import { criterioApelacionAutoridad } from '../src/criterios/apelacion-autoridad/index.js';
+import { PROMPT_SISTEMA as PROMPT_AUTORIDAD } from '../src/criterios/apelacion-autoridad/prompt.js';
 import { validarEvaluacion as validarAutoridad } from '../src/criterios/apelacion-autoridad/esquema.js';
 import { detectarIdiomaDocumento } from '../src/procesamiento/idioma.js';
 import { marcadoresCausales } from '../src/criterios/framing-causal/conectores.js';
-import { segmentarEnAfirmaciones } from '../src/procesamiento/segmentar.js';
+import { segmentarEnAfirmaciones, transcripcionSinPuntuacion } from '../src/procesamiento/segmentar.js';
 import { construirHTML } from '../src/reporte/generar.js';
-import type { ResultadoAfirmacion, Resultados } from '../src/tipos.js';
+import type { ResultadoAfirmacion, Resultados, SegmentoTranscripcion } from '../src/tipos.js';
 import { formatearTiempo } from '../src/utilidades/rutas.js';
 import { citarWindows, ejecutar, flagDeVersion } from '../src/utilidades/proceso.js';
 import { elegirPistaOriginal, esRestoDeDescarga } from '../src/ingesta/descargar.js';
@@ -133,6 +134,27 @@ comprobar(
   marcadoresCausales('la causalidad y el causante son conceptos distintos').join(','),
 );
 const preseleccionadas = afirmaciones.filter((a) => a.preseleccionada).length;
+// --- Casos reales del primer discurso medido (Fase B) ---
+// La medicion de recall dio 3 afirmaciones "perdidas". Adjudicadas a mano, solo UNA
+// era un hueco del gate; las otras dos no tienen ningun lenguaje causal y el modelo
+// las marco igual. Eso las vuelve el mejor control negativo que tenemos: son texto
+// real donde el prefiltro acierta al no gastar un token.
+comprobar(
+  'Prefiltro (caso real): captura "drove innovation overseas"',
+  marcadoresCausales(
+    'They use weaponization, political weaponization, and constant targeting that drove innovation overseas and they wanted to drive it out.',
+  ).includes('drove'),
+);
+comprobar(
+  'Prefiltro (caso real): no dispara con "the blockade has been 100 percent successful"',
+  marcadoresCausales('But the blockade has been 100 percent successful.').length === 0,
+);
+comprobar(
+  'Prefiltro (caso real): no dispara con una orden ejecutiva sin lenguaje causal',
+  marcadoresCausales(
+    'And it started first with this executive order, which came out ordering the agencies in his administration to take steps in this direction.',
+  ).length === 0,
+);
 comprobar(
   'Prefiltro: preselecciona parte del discurso, no todo',
   preseleccionadas >= 4 && preseleccionadas < afirmaciones.length,
@@ -153,8 +175,22 @@ const valido = {
 };
 comprobar('Esquema: acepta un objeto valido', validarEvaluacion(valido).ok);
 comprobar(
-  'Esquema: rechaza justificacion ausente',
-  !validarEvaluacion({ ...valido, justificacion: '' }).ok,
+  'Esquema: acepta las claves cortas que pide el prompt',
+  (() => {
+    const v = validarEvaluacion({ causal: true, contraste: false, ventana: 'corta' });
+    return (
+      v.ok &&
+      v.evaluacion.tiene_lenguaje_causal_fuerte === true &&
+      v.evaluacion.ventana_temporal_mencionada === 'corta'
+    );
+  })(),
+);
+comprobar(
+  'Esquema: la justificacion se compone sola, el modelo no la manda',
+  (() => {
+    const v = validarEvaluacion({ causal: true, contraste: false, ventana: 'ninguna' });
+    return v.ok && v.evaluacion.justificacion.length > 20 && v.evaluacion.justificacion.endsWith('.');
+  })(),
 );
 comprobar(
   'Esquema: normaliza "corta (dias/semanas)"',
@@ -164,18 +200,41 @@ comprobar(
   })(),
 );
 comprobar(
-  'Esquema: reescala un score en 0-100',
+  'Esquema: el score que mande el modelo se ignora, se deriva de los campos',
   (() => {
     const v = validarEvaluacion({ ...valido, score_framing_causal: 82 });
-    return v.ok && v.evaluacion.score_framing_causal === 0.82;
+    return v.ok && v.evaluacion.score_framing_causal === derivarScore(true, false, 'ninguna');
   })(),
 );
 comprobar(
-  'Esquema: corrige incoherencia (sin causal fuerte pero score alto)',
+  'Score derivado: sin causal fuerte nunca puede ser alto',
+  derivarScore(false, false, 'corta') < 0.3 && derivarScore(false, true, 'ninguna') < 0.3,
+);
+comprobar(
+  'Score derivado: lo mas fragil es causal sin contraste y con plazo corto',
   (() => {
-    const v = validarEvaluacion({ ...valido, tiene_lenguaje_causal_fuerte: false, score_framing_causal: 0.9 });
-    return v.ok && v.evaluacion.score_framing_causal < 0.3 && v.ajustes.length > 0;
+    const fragil = derivarScore(true, false, 'corta');
+    return (
+      fragil === 0.9 &&
+      fragil > derivarScore(true, false, 'ninguna') &&
+      derivarScore(true, false, 'ninguna') > derivarScore(true, false, 'razonable') &&
+      derivarScore(true, false, 'razonable') > derivarScore(true, true, 'ninguna') &&
+      derivarScore(true, true, 'ninguna') > derivarScore(true, true, 'razonable')
+    );
   })(),
+);
+comprobar(
+  'Score derivado: es una funcion pura, mismo input mismo output',
+  derivarScore(true, false, 'ninguna') === derivarScore(true, false, 'ninguna'),
+);
+comprobar(
+  'Prompt: ya no le pide al modelo ni el score ni la justificacion',
+  !PROMPT_SISTEMA.includes('score_framing_causal') && !PROMPT_SISTEMA.includes('justificacion'),
+);
+comprobar(
+  'Prompt: se achico a menos de la mitad de lo que costaba leer',
+  PROMPT_SISTEMA.length < 2200,
+  `${PROMPT_SISTEMA.length} caracteres`,
 );
 comprobar('Esquema: rechaza enum invalido', !validarEvaluacion({ ...valido, ventana_temporal_mencionada: 'quizas' }).ok);
 comprobar(
@@ -234,8 +293,56 @@ comprobar(
   elegirPistaOriginal({ idioma: null, publicados: ['und', 'pt-BR'], automaticos: [] })?.lang === 'pt-BR',
 );
 comprobar(
+  'Pistas: --subtitulos-asr salta los publicados y toma la ASR del original',
+  // Sin esta opcion no hay experimento valido: comparar el discurso en ingles con
+  // subtitulos publicados contra el discurso en espanol con ASR mezcla el efecto de la
+  // ASR con el del idioma y el del orador. Forzando la pista se compara el MISMO video.
+  elegirPistaOriginal(linkReal, true)?.lang === 'en-orig' &&
+    elegirPistaOriginal(linkReal, true)?.auto === true,
+  JSON.stringify(elegirPistaOriginal(linkReal, true)),
+);
+comprobar(
+  'Pistas: forzar la ASR sigue sin aceptar una traduccion',
+  elegirPistaOriginal({ idioma: 'en', publicados: ['en-US'], automaticos: ['es', 'fr'] }, true) === null,
+);
+comprobar(
   'Pistas: sin nada utilizable devuelve null',
   elegirPistaOriginal({ idioma: 'de', publicados: [], automaticos: [] }) === null,
+);
+
+// ------------------------------------------- segmentacion sin puntuacion (ASR)
+// Caso real: un discurso en espanol tomado de la ASR de YouTube. 732 cues sin un solo
+// punto daban 87 bloques de 420 caracteres y el modelo marcaba CERO afirmaciones: cada
+// "afirmacion" eran varias pegadas. Sin puntos, la unica senal de limite es la pausa.
+const cuesSinPuntuacion: SegmentoTranscripcion[] = [
+  { inicio: 0.0, fin: 2.0, texto: 'la reforma del ano pasado provoco la caida del empleo industrial' },
+  { inicio: 3.2, fin: 5.0, texto: 'nadie discute eso porque los numeros estan a la vista' },
+  { inicio: 6.4, fin: 8.5, texto: 'el aumento de tarifas genero una contraccion fuerte del consumo' },
+  { inicio: 9.9, fin: 12.0, texto: 'y la salida de capitales fue consecuencia de las declaraciones' },
+];
+const sinPunto = segmentarEnAfirmaciones(cuesSinPuntuacion, 'es', 'es', () => []);
+comprobar(
+  'ASR: una transcripcion sin puntuacion se detecta como tal',
+  transcripcionSinPuntuacion(cuesSinPuntuacion),
+);
+comprobar(
+  'ASR: sin puntuacion se corta por pausas, no en un solo bloque',
+  sinPunto.length === 4,
+  `${sinPunto.length} afirmaciones`,
+);
+comprobar(
+  'ASR: cada bloque queda corto y con timestamp propio',
+  sinPunto.every((a) => a.texto.length < 240) &&
+    sinPunto.every((a, i) => i === 0 || a.inicio >= sinPunto[i - 1]!.inicio),
+);
+comprobar(
+  'ASR: un texto puntuado normal NO entra por esta rama',
+  !transcripcionSinPuntuacion([
+    { inicio: 0, fin: 2, texto: 'La reforma provoco la caida. Nadie lo discute. Los numeros estan.' },
+    { inicio: 2, fin: 4, texto: 'El aumento genero una contraccion. Fue muy fuerte. Se vio enseguida.' },
+    { inicio: 4, fin: 6, texto: 'La salida de capitales siguio. Duro meses. Nadie la freno a tiempo.' },
+    { inicio: 6, fin: 8, texto: 'Hubo declaraciones. Fueron desafortunadas. El mercado reacciono mal.' },
+  ]),
 );
 
 // ------------------------------------------------------------- subprocesos
@@ -308,7 +415,7 @@ const c5 = new CacheEvaluaciones(rutaCache, 'qwen2.5:3b', HASH_PROMPT, false);
 comprobar('Cache: deshabilitada nunca acierta', c5.obtener('una frase') === null);
 comprobar(
   'Cache: la huella del prompt cambia si cambia el prompt',
-  HASH_PROMPT.length === 8 && PROMPT_SISTEMA.includes('maximo 20 palabras'),
+  HASH_PROMPT.length === 8 && PROMPT_SISTEMA.includes('"causal"'),
 );
 fs.rmSync(path.dirname(rutaCache), { recursive: true, force: true });
 
@@ -493,6 +600,33 @@ comprobar(
       ...evalAutoridadValida, fuente_identificable: true, alcance_de_la_evidencia: 'especifico',
     });
     return v.ok && v.evaluacion.score_autoridad_vaga < 0.3 && v.ajustes.length > 0;
+  })(),
+);
+comprobar(
+  'Autoridad: a diferencia del causal, la justificacion SI la escribe el modelo',
+  (() => {
+    const v = validarAutoridad({ ...evalAutoridadValida, justificacion: 'Nombra OECD, el ano y la muestra de 38 paises.' });
+    return v.ok && v.evaluacion.justificacion.includes('OECD');
+  })(),
+);
+comprobar(
+  'Autoridad: sin justificacion no valida',
+  !validarAutoridad({ ...evalAutoridadValida, justificacion: '' }).ok,
+);
+comprobar(
+  // El recorte que funciono en el criterio causal se midio aca y empeoro: invoca_autoridad
+  // cayo de 100% a 80% y el score en rango de 100% a 70%. Este test deja constancia de que
+  // volver a las claves largas fue una decision medida, no un descuido.
+  'Autoridad: conserva las claves largas del prompt original (medido: acortarlas empeora)',
+  PROMPT_AUTORIDAD.includes('"invoca_autoridad"') &&
+    PROMPT_AUTORIDAD.includes('"fuente_identificable"') &&
+    PROMPT_AUTORIDAD.includes('"score_autoridad_vaga"'),
+);
+comprobar(
+  'Autoridad: el score lo devuelve el modelo, no se deriva',
+  (() => {
+    const v = validarAutoridad({ ...evalAutoridadValida, score_autoridad_vaga: 0.72 });
+    return v.ok && v.evaluacion.score_autoridad_vaga === 0.72;
   })(),
 );
 comprobar(

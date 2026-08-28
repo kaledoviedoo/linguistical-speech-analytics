@@ -147,12 +147,17 @@ const raiz = (lang: string): string => (lang.split('-')[0] ?? lang).toLowerCase(
  * Por eso, si lo unico disponible es una traduccion, esta funcion devuelve null y el
  * pipeline transcribe el audio localmente, que si respeta el original.
  */
-export function elegirPistaOriginal(pistas: PistasDelLink): PistaElegida | null {
+export function elegirPistaOriginal(pistas: PistasDelLink, forzarASR = false): PistaElegida | null {
   const idioma = pistas.idioma ? raiz(pistas.idioma) : null;
 
-  const publicado = idioma
+  // --subtitulos-asr salta los publicados a proposito: sirve para medir CUANTO cuesta
+  // la ASR sobre el mismo video del que si hay una version limpia. Sin esta opcion, la
+  // comparacion "publicados vs ASR" mezclaria dos discursos y dos idiomas distintos.
+  const publicado = forzarASR
+    ? undefined
+    : idioma
     ? pistas.publicados.find((l) => raiz(l) === idioma)
-    : (pistas.publicados.find((l) => raiz(l) !== 'und') ?? pistas.publicados[0]);
+      : (pistas.publicados.find((l) => raiz(l) !== 'und') ?? pistas.publicados[0]);
   if (publicado) return { lang: publicado, auto: false };
 
   // YouTube marca la ASR del original con el sufijo -orig cuando ademas ofrece traducciones.
@@ -216,13 +221,14 @@ export async function descargarSubtitulos(
   url: string,
   dirTrabajo: string,
   cookiesNavegador: string | null = null,
+  forzarASR = false,
 ): Promise<SubtitulosDescargados | null> {
   if (!(await existeBinario('yt-dlp'))) throw errorBinarioFaltante('yt-dlp');
 
   const pistas = await inspeccionarLink(url, cookiesNavegador);
   if (!pistas) return null;
 
-  const elegida = elegirPistaOriginal(pistas);
+  const elegida = elegirPistaOriginal(pistas, forzarASR);
   if (!elegida) {
     log.aviso(
       `Este link solo ofrece traducciones automaticas (idioma del video: ${pistas.idioma ?? 'desconocido'}).\n` +

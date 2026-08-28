@@ -17,7 +17,7 @@ import { obtenerCriterio } from './criterios/registro.js';
 import { CacheEvaluaciones } from './motor/cache.js';
 import { estadoOllama, mensajeAyudaOllama, procesosCargados, tieneModelo } from './motor/ollama.js';
 import { detectarIdiomaDocumento } from './procesamiento/idioma.js';
-import { segmentarEnAfirmaciones } from './procesamiento/segmentar.js';
+import { segmentarEnAfirmaciones, transcripcionSinPuntuacion } from './procesamiento/segmentar.js';
 import { escribirReporte } from './reporte/generar.js';
 import type {
   Afirmacion,
@@ -42,6 +42,8 @@ async function cargarTranscriptor() {
 
 export interface OpcionesPipeline extends OpcionesCorrida {
   preferirSubtitulos: boolean;
+  /** --subtitulos-asr: usa la ASR aunque el video tenga subtitulos publicados. */
+  subtitulosASR: boolean;
 }
 
 export function detectarTipoEntrada(entrada: string): TipoEntrada {
@@ -88,7 +90,7 @@ async function obtenerTranscripcion(
   if (tipo === 'url') {
     if (opciones.preferirSubtitulos) {
       log.paso('2a', 'Buscando subtitulos publicados en el link (evita transcribir)...');
-      const subs = await descargarSubtitulos(opciones.entrada, dir, opciones.cookiesNavegador);
+      const subs = await descargarSubtitulos(opciones.entrada, dir, opciones.cookiesNavegador, opciones.subtitulosASR);
       if (subs) {
         const origen = subs.auto ? 'transcripcion automatica de YouTube' : 'publicados por el canal';
         log.ok(`Subtitulos [${subs.lang}] ${origen}: ${path.basename(subs.ruta)}`);
@@ -207,7 +209,12 @@ export async function ejecutarPipeline(opciones: OpcionesPipeline): Promise<Sali
   const criterio = obtenerCriterio(opciones.criterio);
   const motor = motorOllama(opciones.urlOllama, opciones.modelo);
   const tipo = detectarTipoEntrada(opciones.entrada);
-  const hash = hashDeEntrada(opciones.entrada, tipo !== 'url');
+  // La pista forzada es parte de la entrada: analizar el MISMO video por subtitulos
+  // publicados y por ASR son dos corridas distintas y no deben pisarse los datos.
+  const hash = hashDeEntrada(
+    opciones.subtitulosASR ? `${opciones.entrada}#asr` : opciones.entrada,
+    tipo !== 'url',
+  );
   const dir = dirTrabajo(hash);
 
   log.paso(1, `Entrada detectada: ${tipo}  (hash ${hash})`);
@@ -225,6 +232,13 @@ export async function ejecutarPipeline(opciones: OpcionesPipeline): Promise<Sali
 
   // --- Segmentacion + prefiltro
   log.paso(3, 'Segmentando en afirmaciones y aplicando el prefiltro del criterio...');
+  if (transcripcionSinPuntuacion(transcripcion.segmentos)) {
+    log.aviso(
+      'La transcripcion no trae puntuacion (tipico de la ASR de YouTube).\n' +
+        '      Se corta por las pausas del hablante en vez de por oraciones. Es peor que un\n' +
+        '      subtitulo publicado: si el resultado no convence, corre sin --preferir-subtitulos.',
+    );
+  }
   let afirmaciones: Afirmacion[] = segmentarEnAfirmaciones(
     transcripcion.segmentos,
     transcripcion.idiomaDocumento,

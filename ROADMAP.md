@@ -22,8 +22,9 @@ concreto: algo que se pueda medir, no una sensación de que "ya está mejor".
 | Motor de inferencia como puerto | ✅ | el bucle se testea sin servidor HTTP |
 | Criterio `apelacion-autoridad` | ✅ | 12 casos de control, reporte verificado |
 | Medición del recall del prefiltro | ✅ herramienta lista | falta correrla sobre material real |
-| Transcripción Whisper local | ⚠️ binarios ya instalados, **sin ejecutar todavía** | pendiente Fase A |
-| Descarga de links con yt-dlp | ⚠️ binarios ya instalados, **sin ejecutar todavía** | pendiente Fase A |
+| Ingesta de links con yt-dlp (subtítulos) | ✅ | discurso real de YouTube analizado de punta a punta |
+| Selección de pista en el idioma original | ✅ | 6 tests; nunca baja una traducción automática |
+| Transcripción Whisper local | ⚠️ binarios instalados, **sin ejecutar todavía** | pendiente Fase A, ruta 2 y 3 |
 
 **Rendimiento medido en la máquina de referencia (sin GPU compatible):** ~10 tok/s, ~11 s por
 afirmación, ~100 tokens por respuesta. Un discurso de 40 min ronda los 18 minutos de análisis.
@@ -32,34 +33,78 @@ afirmación, ~100 tokens por respuesta. Un discurso de 40 min ronda los 18 minut
 
 ## Fase A — Desbloquear video
 
-`yt-dlp` y `ffmpeg` ya están instalados. Falta ejecutar las tres rutas, en orden:
+Las cinco filas de `verificar.cmd` están en OK y la ruta de subtítulos corrió sobre material real.
 
-1. Un audio corto local (recortá 5 minutos con ffmpeg) → confirma que Whisper produce timestamps.
-2. Un link de YouTube con `--preferir-subtitulos` → confirma yt-dlp sin pagar transcripción.
-3. El mismo link sin esa opción → confirma la ruta completa link → audio → Whisper.
+| Ruta | Estado | Evidencia |
+|---|---|---|
+| Link con `--preferir-subtitulos` | ✅ | 916 cues → 376 afirmaciones → 25 evaluadas → reporte |
+| Audio local corto → Whisper | ⬜ | falta |
+| Link sin subtítulos → audio → Whisper | ⬜ | falta; necesitaba la nightly de yt-dlp por el 403 |
 
-**Criterio de aceptación:** las cinco filas de `verificar.cmd` en OK y un reporte generado desde un link.
+La primera corrida real dejó tres cosas registradas:
+
+- **El prefiltro es lo que hace viable esto.** 376 afirmaciones en un discurso de ~50 minutos; a
+  11,6 s por evaluación, mandarlas todas serían 73 minutos. Cuánto se pierde a cambio es la Fase B.
+- **yt-dlp estable no alcanza para YouTube.** El descifrado de firmas se rompe seguido y el arreglo
+  sale en la nightly (`yt-dlp --update-to nightly`). Documentado en el README.
+- **Pedir un idioma no es pedir un subtítulo.** Ver [Arquitectura](ARQUITECTURA.md#qué-reveló-el-primer-link-real).
+
+**Criterio de aceptación:** las tres rutas ejecutadas. Falta Whisper.
 
 ---
 
-## Fase B — Saber cuánto se pierde el prefiltro
+## Fase B — Saber cuánto se pierde el prefiltro — **HECHO**
 
-El prefiltro descarta entre el 60% y el 80% del texto sin gastar un token. Eso es lo que hace viable
-correr esto en CPU, pero **nadie midió todavía qué se pierde**.
+Medido sobre un discurso real de ~50 minutos (916 cues → 376 afirmaciones), con el prefiltro
+desactivado y las 376 evaluadas por el modelo:
 
-**La herramienta ya existe.** Una sola pasada alcanza: con el prefiltro desactivado cada afirmación
-sigue trayendo sus marcadores heurísticos, así que basta preguntar cuáles de las que superaron el umbral
-no tenían ningún conector.
-
-```powershell
-.\medir.cmd discurso.srt
+```
+Con algun conector causal      30   (8% del texto)
+Sin ningun conector           346
+Superan el umbral 0.70          6
+  capturadas                    3
+  perdidas                      3
+Recall del prefiltro         50.0%
+Ahorro de computo              92%
 ```
 
-Devuelve el recall, el ahorro de cómputo y la lista de las afirmaciones perdidas.
+**El 50% no es el número real, y esa es la lección principal de la fase.** Las tres perdidas hay
+que adjudicarlas a mano:
 
-**Criterio de aceptación:** un número de recall sobre material real. Si se pierde menos del 5%, el
-prefiltro se queda como está y el número queda documentado en el README. Si se pierde más, los conectores
-que faltaban se agregan a `prefiltro.ts` y el caso entra al repo como test fijo.
+| afirmación | ¿tiene lenguaje causal? | veredicto |
+|---|---|---|
+| «…targeting that **drove** innovation overseas…» | sí | hueco real del gate |
+| «…this executive order, which came out **ordering** the agencies…» | no | falso positivo del modelo |
+| «But the blockade has been 100 percent successful.» | no | falso positivo del modelo |
+
+Solo una era un conector faltante. Recall adjudicado: **3 de 4 = 75%**, y con `drove` agregado
+pasa a 4/4 sobre este material.
+
+Lo que esto revela es que **el prefiltro no es solo un ahorro de cómputo: también es un filtro de
+precisión**. Al apagarlo, el modelo ve 346 oraciones que nunca vería y en dos de ellas inventa
+causalidad donde no hay ninguna. Contarlas como «pérdidas del prefiltro» invierte la
+responsabilidad. El veredicto de `medir.cmd` ahora lo dice y pide adjudicación manual en vez de
+mandar a agregar conectores a ciegas.
+
+Las tres afirmaciones quedaron como tests fijos: la primera verifica que el gate ahora la captura,
+las otras dos son el mejor control negativo del repo —texto real donde el prefiltro acierta al no
+gastar un token—.
+
+**Pendiente:** repetir la medición sobre un segundo discurso, en español, para no generalizar desde
+un solo caso en inglés.
+
+---
+
+## Fase B2 — Medir el prefiltro del criterio nuevo
+
+Mismo procedimiento, con `--criterio apelacion-autoridad`. El gate de autoridad se escribió más
+selectivo que el causal a propósito y esa decisión hay que verificarla igual.
+
+```powershell
+.\medir.cmd discurso.srt --criterio apelacion-autoridad
+```
+
+**Criterio de aceptación:** un recall adjudicado, con la misma tabla caso por caso.
 
 ---
 
@@ -102,25 +147,6 @@ Lo que queda:
 - Fijar un umbral mínimo de exactitud por campo que CI pueda verificar cuando haya un Ollama disponible.
 
 **Criterio de aceptación:** un umbral por campo acordado y documentado, con la corrida que lo respalda.
-
----
-
-## Fase B2 — Medir el prefiltro del criterio nuevo
-
-El gate léxico de apelación a autoridad se escribió más selectivo que el causal a propósito: «el
-informe» o «los datos» a secas aparecen todo el tiempo en discurso económico sin ser apelaciones a
-autoridad. Esa decisión hay que verificarla igual que la otra.
-
-Hay una limitación conocida que conviene medir: el prefiltro está afinado para el patrón **sospechoso**,
-así que las afirmaciones bien fundadas («el informe del Banco Central de marzo, sobre una muestra de
-1.200 empresas…») no llegan al modelo. Para el objetivo de la herramienta está bien —esas puntuarían
-bajo de todos modos— pero significa que el reporte no muestra los buenos ejemplos.
-
-```powershell
-.\medir.cmd discurso.srt --criterio apelacion-autoridad
-```
-
-**Criterio de aceptación:** un número de recall para este criterio, con el mismo umbral del 5%.
 
 ---
 

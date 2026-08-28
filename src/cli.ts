@@ -48,6 +48,7 @@ ${negrita('Opciones')}
       --ollama <url>        URL de Ollama               (por defecto: ${URL_OLLAMA})
       --sin-prefiltro       Manda TODAS las oraciones al modelo (mas lento, mas recall)
       --preferir-subtitulos Si el link ya tiene subtitulos, usalos en vez de transcribir
+      --subtitulos-asr      Fuerza la transcripcion automatica aunque haya publicados (para medir)
       --cookies <navegador> Cookies del navegador para YouTube (chrome, edge, firefox, brave)
       --criterio <id>       Criterio de auditoria (por defecto: ${CRITERIO_POR_DEFECTO})
       --forzar              Ignora la cache de ./data y rehace todo
@@ -98,6 +99,7 @@ export function parsearArgumentos(argv: string[]): Argumentos {
     cookiesNavegador: null,
     verboso: false,
     preferirSubtitulos: false,
+    subtitulosASR: false,
     ayuda: false,
     verificarEntorno: false,
     benchmark: false,
@@ -117,6 +119,7 @@ export function parsearArgumentos(argv: string[]): Argumentos {
       case '--forzar': o.forzar = true; break;
       case '--sin-prefiltro': o.usarPrefiltro = false; break;
       case '--preferir-subtitulos': o.preferirSubtitulos = true; break;
+      case '--subtitulos-asr': o.preferirSubtitulos = true; o.subtitulosASR = true; break;
       case '-m': case '--modelo': o.modelo = siguiente(argv, i, a); i++; break;
       case '--whisper': o.modeloWhisper = siguiente(argv, i, a); i++; break;
       case '--ollama': o.urlOllama = siguiente(argv, i, a).replace(/\/+$/, ''); i++; break;

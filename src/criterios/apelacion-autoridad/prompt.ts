@@ -5,9 +5,34 @@
  * el estudio existe. Se evalua si la afirmacion, TAL COMO ESTA DICHA, le da al oyente
  * lo necesario para ir a verificarla: quien lo dice, y de que evidencia se habla.
  *
- * Es a proposito mas corto que el prompt causal (unos 700 tokens contra 1300). En CPU
- * el prompt de sistema se evalua entero la primera vez, y ese costo se paga una vez
- * por modelo cargado: un criterio mas liviano arranca mas rapido.
+ * ESTE PROMPT ESTA EN SU FORMA ORIGINAL A PROPOSITO. QUEDA DOCUMENTADO POR QUE.
+ *
+ * El criterio causal gano mucho al recortarse: prompt de 1297 a 502 tokens, salida de
+ * 72 a 21, 9,1 s -> 2,9 s por afirmacion, y ADEMAS mejor exactitud (score en rango de
+ * 68% a 91%). Aplicar la misma receta aca fallo dos veces seguidas:
+ *
+ *   original                     invoca 100%  fuente  90%  alcance 90%  score 100%  11,0 s
+ *   claves cortas (sustantivos)  invoca  67%  fuente  89%  alcance 89%  score  44%   6,7 s
+ *   claves cortas (verbo/adj)    invoca  80%  fuente 100%  alcance 80%  score  70%   6,3 s
+ *   + senales restauradas        invoca  80%  fuente 100%  alcance 80%  score  70%   6,5 s
+ *
+ * La tercera corrida no movio un solo caso respecto de la segunda, lo que descarta que
+ * el problema fuera el texto que yo habia borrado. Lo que queda en pie es lo unico que
+ * no se probo por separado: los nombres de las claves. `invoca_autoridad` lleva su
+ * objeto adentro; `invoca` solo no.
+ *
+ * Podria seguir probando variantes, pero son 10 casos de control. A la tercera iteracion
+ * ajustando contra el mismo conjunto con el que se mide, ya no se esta disenando: se
+ * esta sobreajustando. La decision es volver al original, que estaba medido, y pagar los
+ * 4,5 s de diferencia.
+ *
+ * Y hay una razon de fondo para no forzarlo: aca el modelo SI sabe puntuar. Devolvio
+ * score en rango 100% con error medio 0,07 —contra 68% del criterio causal— asi que el
+ * argumento que justifico derivar el score alla no aplica aca. Los dos criterios se
+ * parecen en su contrato, no en como el modelo los resuelve.
+ *
+ * Cuando la Fase D sume afirmaciones reales anotadas, este recorte se puede reintentar
+ * con un conjunto lo bastante grande como para que la medicion signifique algo.
  */
 import { createHash } from 'node:crypto';
 
