@@ -581,6 +581,23 @@ npm run test:pipeline        # 152 tests offline, no necesitan Ollama
 corrida de un link vuelve a descargar subtítulos y a evaluar. Si querés llevarte el trabajo ya hecho,
 copiá esas dos carpetas a mano.
 
+### Qué modelo usar (medido)
+
+| modelo | esquema | causal | contraste | ventana | score | todos | ms/afirm |
+|---|---|---|---|---|---|---|---|
+| **qwen2.5:3b** (por defecto) | 24/24 | 91% | **91%** | 82% | **91%** | **73%** | 602 |
+| qwen2.5:1.5b | 24/24 | 77% | 68% | 82% | 64% | 45% | **269** |
+| llama3.2:3b | 24/24 | **95%** | 73% | 82% | 91% | 59% | 809 |
+
+Medido con Ollama 0.32.15 sobre GPU, 24 casos de control. `qwen2.5:1.5b` es 2,2× más rápido pero
+pierde 27 puntos, casi todos en `tiene_contrafactual_o_comparacion` — el campo que decide si una
+afirmación causal es defendible. `llama3.2:3b` detecta mejor el lenguaje causal pero sobre-detecta
+comparaciones, lo que baja de más el score de afirmaciones frágiles.
+
+Estos números valen **para esa máquina**: el mismo modelo a temperatura 0 dio 86% en `ventana` en
+una y 82% en otra, por diferencias de versión de Ollama y de backend. Reproducilos con
+`npm run comparar` antes de cambiar el modelo por defecto.
+
 ### Comparar modelos (Fase C)
 
 La comparación conviene correrla en una máquina con GPU, porque son tres pasadas completas del

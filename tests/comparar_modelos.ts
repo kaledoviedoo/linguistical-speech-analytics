@@ -102,7 +102,14 @@ async function main(): Promise<number> {
     (k) => k !== 'score' && k !== 'todosLosCampos',
   );
 
-  console.log(negrita('\n\nTABLA COMPARATIVA\n'));
+  // La tabla SIN esta linea no se puede comparar con otra corrida. Medido: el mismo
+  // modelo a temperatura 0 dio 86% de exactitud en ventana_temporal en una maquina y
+  // 82% en otra, con distinta version de Ollama y GPU en vez de CPU. El determinismo
+  // vale dentro de una maquina, no entre maquinas.
+  console.log(negrita('\n\nTABLA COMPARATIVA'));
+  console.log(
+    gris(`  Ollama ${estado.version ?? '?'} · ${process.platform}-${process.arch} · Node ${process.version}\n`),
+  );
   const cab = [
     'modelo'.padEnd(18),
     'esquema'.padStart(9),

@@ -26,8 +26,16 @@ concreto: algo que se pueda medir, no una sensación de que "ya está mejor".
 | Selección de pista en el idioma original | ✅ | 6 tests; nunca baja una traducción automática |
 | Transcripción Whisper local | ⚠️ binarios instalados, **sin ejecutar todavía** | pendiente Fase A, ruta 2 y 3 |
 
-**Rendimiento medido en la máquina de referencia (sin GPU compatible):** ~10 tok/s, ~11 s por
-afirmación, ~100 tokens por respuesta. Un discurso de 40 min ronda los 18 minutos de análisis.
+**Rendimiento medido, dos máquinas:**
+
+| | tok/s | ms por afirmación | discurso de 40 min |
+|---|---|---|---|
+| CPU (máquina de referencia) | 10,3 | 2900 | ~5 min |
+| GPU | 69,0 | 602 | ~1 min |
+
+Los números de CPU son posteriores a la optimización del prompt: antes eran 8,9 tok/s y 9100 ms por
+afirmación, o sea ~18 minutos por discurso. El recorte del prompt (1297 → 502 tokens) y de la salida
+(72 → 21 tokens) valió un 3,1× en CPU, y encima subió la exactitud.
 
 ---
 
@@ -163,38 +171,47 @@ selectivo que el causal a propósito y esa decisión hay que verificarla igual.
 
 ---
 
-## Fase C — Elegir el modelo con datos, no por intuición
+## Fase C — Elegir el modelo con datos, no por intuición — **HECHA**
 
-**Preparada, pendiente de correrse en otra máquina.** La de referencia no tiene VRAM suficiente
-(`ollama ps` da `100% CPU` incluso con el modelo de 1.5b, que pesa 1,1 GB contra ~1 GB disponibles),
-así que las tres pasadas del conjunto de control tardarían más de lo razonable acá.
+Corrida en una máquina con GPU (Ollama 0.32.15, Node 24, `qwen2.5:3b` a 69 tok/s contra los
+10,3 tok/s de la máquina de referencia en CPU).
 
-Es un solo comando, pensado para que quien lo corra no tenga que conocer el arnés por dentro:
+| modelo | esquema | determ. | causal | contraste | ventana | score | todos | tok/s | ms/afirm |
+|---|---|---|---|---|---|---|---|---|---|
+| **qwen2.5:3b** | 24/24 | sí | 91% | **91%** | 82% | **91%** | **73%** | 69,0 | 602 |
+| qwen2.5:1.5b | 24/24 | sí | 77% | 68% | 82% | 64% | 45% | 115,3 | **269** |
+| llama3.2:3b | 24/24 | sí | **95%** | 73% | 82% | 91% | 59% | 65,7 | 809 |
 
-```bash
-ollama pull qwen2.5:1.5b
-ollama pull llama3.2:3b
-npm run comparar
-```
+**Decisión: `qwen2.5:3b` se queda como modelo por defecto.** No se cambia nada en `config.ts`.
 
-Corre el conjunto de control completo contra los tres modelos, deja el JSON crudo de cada uno en
-`medidas-<modelo>-<criterio>.json` y arma la tabla comparativa. Verifica primero que los modelos
-estén descargados y dice cuáles faltan.
+Los tres pasan los gates bloqueantes, así que la decisión se juega en la calidad del juicio:
 
-Los dos primeros renglones son **bloqueantes**: un modelo que no respeta el esquema o que no es
-reproducible a temperatura 0 queda descalificado, por rápido que sea. Entre los que pasan, el script
-separa "más exacto" de "más rápido" y cuantifica el intercambio en puntos de exactitud y en
-milisegundos por afirmación, en vez de declarar un ganador solo.
+- **`qwen2.5:1.5b` es 2,2× más rápido y pierde 27 puntos.** El desplome está concentrado en
+  `tiene_contrafactual_o_comparacion`: 68% de exactitud con F1 de 36% (precisión 40%, sensibilidad
+  33%). Ese campo es la mitad de la pregunta del criterio —una afirmación causal *con* comparación
+  es defendible— así que un modelo que no lo detecta no está haciendo la tarea, está haciendo otra.
+  Descartado para uso normal; sigue siendo útil con `--modelo` para una pasada exploratoria rápida.
+- **`llama3.2:3b` gana en `tiene_lenguaje_causal_fuerte` (95%, F1 96%)** y empata en score, pero
+  sobre-detecta contraste: precisión 50% con sensibilidad 100%, o sea que dice «sí hay comparación»
+  seis veces de más. Eso baja el score de afirmaciones que deberían quedar altas — falsos negativos
+  del producto. Y encima es 34% más lento.
+- **`qwen2.5:3b` es el único equilibrado**: 91% y 91% en los dos booleanos, sin sesgo hacia ningún
+  lado.
 
-Punto de partida medido en la máquina de referencia (CPU, sin GPU):
+### Un hallazgo colateral: el determinismo no cruza de máquina
 
-| modelo | tok/s | ms por afirmación | notas |
-|---|---|---|---|
-| qwen2.5:3b | 10,3 | 2900 | el actual por defecto |
-| qwen2.5:1.5b | 19,2 | 1550 | 1,9× más rápido, exactitud sin medir |
+El mismo `qwen2.5:3b`, mismo prompt, misma temperatura 0, dio **86%** en `ventana_temporal` en la
+máquina de referencia y **82%** en la de GPU. Dos casos cambiaron de respuesta. El gate de
+determinismo sigue en «sí» porque mide repetición **dentro de una corrida**, y ahí es exacto.
 
-**Criterio de aceptación:** la tabla de tres filas en el README y un cambio de `MODELO_LLM` en
-`src/config.ts` si alguno gana claramente sin perder cumplimiento del esquema.
+No es un bug: distinta versión de Ollama, distinto backend de cómputo, distinto orden de operaciones
+en punto flotante. Pero significa que **una tabla de estas no es comparable con otra si no dice en
+qué máquina se generó**. El comparador ahora imprime versión de Ollama, plataforma y Node arriba de
+la tabla, y lo mismo va en el JSON.
+
+**Criterio de aceptación: cumplido.** La tabla está acá y en el README, y la conclusión fue *no
+cambiar* el modelo — que es un resultado, no una omisión: la elección original queda respaldada por
+datos en vez de por intuición.
 
 ---
 
@@ -249,7 +266,7 @@ siguiendo solo el README.
 
 | Riesgo | Impacto | Mitigación |
 |---|---|---|
-| Sin GPU, el análisis es lento | Un discurso largo lleva ~20 min | Caché, `--limite`, modelo de 1.5b, `--preferir-subtitulos` |
+| Sin GPU, el análisis es lento | Un discurso largo lleva ~5 min en CPU contra ~1 min en GPU | Caché, `--limite`, modelo de 1.5b, `--preferir-subtitulos` |
 | El prefiltro pierde afirmaciones sin conector léxico | Falsos negativos silenciosos | Medido en Fase B: la causalidad implícita («bajo la administración X, Y fue atacado») no tiene rastro léxico y no se puede capturar con conectores. `--sin-prefiltro` es la única vía |
 | Un modelo de 3B se equivoca en casos sutiles | Scores poco fiables individualmente | El reporte lo dice; Fase D lo cuantifica |
 | Whisper transcribe mal audio con música o voces superpuestas | Afirmaciones mal cortadas | Usar subtítulos publicados cuando existan |
