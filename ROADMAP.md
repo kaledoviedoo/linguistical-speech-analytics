@@ -199,16 +199,50 @@ implícita, **el prefiltro no perdió ninguna afirmación con marca léxica caus
 
 ---
 
-## Fase B2 — Medir el prefiltro del criterio nuevo
+## Fase B2 — Medir el prefiltro del criterio nuevo — **HECHA**
 
-Mismo procedimiento, con `--criterio apelacion-autoridad`. El gate de autoridad se escribió más
-selectivo que el causal a propósito y esa decisión hay que verificarla igual.
+Mismo discurso de la ONU, criterio `apelacion-autoridad`:
 
-```powershell
-.\medir.cmd discurso.srt --criterio apelacion-autoridad
+```
+224 afirmaciones
+con marcador de autoridad: 4 (2%)
+sobre el umbral 0.70: 10   ->  1 capturada, 9 perdidas
+recall crudo: 10,0%   ahorro de computo: 98%
 ```
 
-**Criterio de aceptación:** un recall adjudicado, con la misma tabla caso por caso.
+Adjudicadas las 9, el resultado es muy distinto al del criterio causal:
+
+| tipo | cuántas | qué significa |
+|---|---|---|
+| apelación al saber común («**Saben que** unir la energía limpia…») | 1 | hueco real del gate |
+| cifra sin fuente («100 GB de capacidad», «la más alta cantidad de cocaína de la historia») | 2 | límite estructural |
+| propuestas normativas («el plan **debe ser** vinculante…», «la ONU **debe** detener…») | 5 | falso positivo del modelo |
+| atribución causal («la migración es producto del bloqueo…») | 1 | es del otro criterio |
+
+Tres conclusiones, y ninguna es «agregar más conectores».
+
+**1. El gate no implementaba una rama de su propia definición.** El prompt dice que el saber común
+cuenta como autoridad, y el gate tenía «todos sabemos» y «todo el mundo sabe» pero no «saben que»,
+que es como un orador se dirige a un auditorio. Corregido, con la familia completa y test fijo.
+
+**2. Una cifra sin fuente no deja rastro léxico.** «América Latina tiene 100 GB de capacidad» es
+una apelación a datos no verificables de manual, y no hay palabra que la marque. Es el mismo límite
+que la causalidad implícita en el otro criterio: el gate no puede capturarla por construcción.
+
+**3. El conjunto de control estaba midiendo un problema más fácil que el real.** Sobre 10 casos
+curados el modelo daba 100% en `invoca_autoridad`; sobre 224 oraciones reales marcó cinco
+**propuestas normativas** como apelaciones a autoridad. Nombrar una institución como *ejecutora* de
+algo no es apoyarse en ella como *fuente*, y el conjunto no tenía una sola oración normativa que
+obligara al modelo a distinguirlo.
+
+Las dos peores entraron al conjunto como casos `a11` y `a12`. **Es probable que el 100% de
+`invoca_autoridad` baje en la próxima corrida, y eso es una corrección, no una regresión:** el
+número anterior venía de un conjunto que no representaba el material real.
+
+**Criterio de aceptación: cumplido.** El recall crudo de 10% no es el número honesto —el adjudicado
+es 1 hueco real sobre 3 pérdidas atribuibles al gate— pero lo que importa de la fase es lo que
+destapó: una rama sin implementar, un límite estructural documentado y un conjunto de control
+demasiado benévolo.
 
 ---
 

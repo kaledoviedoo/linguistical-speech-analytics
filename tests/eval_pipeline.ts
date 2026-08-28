@@ -613,6 +613,23 @@ comprobar(
     criterioApelacionAutoridad.marcadoresLexicos('eso provoco la crisis').length === 0,
 );
 comprobar(
+  // Caso real del discurso en espanol: el gate tenia "todos sabemos" pero no la forma
+  // en que un orador se dirige al auditorio, que es la mas frecuente en un discurso.
+  'Autoridad (caso real): captura "saben que" como apelacion al saber comun',
+  criterioApelacionAutoridad
+    .marcadoresLexicos('Saben que unir la energia limpia de America Latina y Africa a las economias del norte.')
+    .includes('saben que'),
+);
+comprobar(
+  // La otra mitad del hallazgo: una cifra sin fuente ("100 GB de capacidad") es una
+  // apelacion a datos no verificables, pero no deja ningun rastro lexico. Es el limite
+  // estructural del gate, igual que la causalidad implicita en el criterio causal.
+  'Autoridad (caso real): una cifra sin fuente no deja rastro lexico',
+  criterioApelacionAutoridad.marcadoresLexicos(
+    'America Latina tiene potencialmente 100 GB de capacidad anual de energia electrica limpia.',
+  ).length === 0,
+);
+comprobar(
   'Autoridad: el gate causal no dispara con lenguaje de autoridad',
   criterioFramingCausal.marcadoresLexicos('todo el mundo sabe que es asi').length === 0,
 );

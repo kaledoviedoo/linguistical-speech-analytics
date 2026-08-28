@@ -30,6 +30,11 @@ const ENTRADAS: EntradaLexica[] = [
     ['organismos internacionales', 'organismos internacionales'],
     ['la comunidad cientifica', 'la comunidad científica'],
     ['quedo demostrado', 'quedó demostrado'], ['ha quedado claro', 'ha quedado claro'],
+    // Hallado midiendo sobre un discurso real: "Saben que unir la energia limpia...".
+    // El gate tenia "todos sabemos" y "todo el mundo sabe" pero no la forma hablada de
+    // dirigirse al auditorio, que es la mas frecuente en un discurso.
+    ['saben que', 'saben que'], ['sabemos que', 'sabemos que'], ['ya saben', 'ya saben'],
+    ['como saben', 'como saben'], ['ustedes saben', 'ustedes saben'],
   ]),
 
   ...lista('en', [
@@ -45,6 +50,7 @@ const ENTRADAS: EntradaLexica[] = [
     ['the consensus', 'the consensus'], ['there is consensus', 'there is consensus'],
     ['the data shows', 'the data shows'], ['the figures show', 'the figures show'],
     ['according to experts', 'according to experts'], ['it is well known', 'it is well known'],
+    ['you know that', 'you know that'], ['as you know', 'as you know'], ['we know that', 'we know that'],
   ]),
 
   ...lista('pt', [

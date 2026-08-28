@@ -6,7 +6,7 @@
  * de alcance: ninguno de estos casos dice si la autoridad citada tiene razon. Solo
  * si el oyente puede ir a comprobarlo.
  *
- * Son 12 casos, no 24: el criterio es mas nuevo y prefiero pocos casos claros antes
+ * Son 14 casos, no 24: el criterio es mas nuevo y prefiero pocos casos claros antes
  * que muchos discutibles. Crece cuando haya material real anotado.
  */
 import type { CasoControl, ConjuntoDeControl } from './casos-tipos.js';
@@ -154,6 +154,44 @@ export const CASOS_AUTORIDAD: CasoControl[] = [
       score: [0.7, 1.0],
     },
     nota: 'El patron base en portugues.',
+  },
+
+  // ------------------------------------- material real (discurso ONU, es)
+  // Los dos son NORMATIVOS: proponen que algo deberia hacerse. No invocan ninguna
+  // fuente de conocimiento. El modelo los marco con score 0.80 en la medicion sobre
+  // el discurso completo, asi que entran al conjunto como controles negativos: el
+  // conjunto anterior no tenia una sola oracion normativa y por eso no veia el fallo.
+  {
+    id: 'a11',
+    idioma: 'es',
+    texto:
+      'El plan debe ser vinculante a los estados nacionales, realizado en una democracia global, ' +
+      'supervisado en su cumplimiento por el Consejo de Seguridad sin veto.',
+    espera: {
+      campos: {
+        invoca_autoridad: false,
+        fuente_identificable: false,
+        alcance_de_la_evidencia: 'ninguno',
+      },
+      score: [0.0, 0.3],
+    },
+    nota: 'Propuesta normativa. Nombrar una institucion como ejecutora no es apoyarse en ella como fuente.',
+  },
+  {
+    id: 'a12',
+    idioma: 'es',
+    texto:
+      'Las Naciones Unidas deben hacer respetar los tribunales internacionales de justicia ' +
+      'y debe hacer cumplir la sentencia de su justicia.',
+    espera: {
+      campos: {
+        invoca_autoridad: false,
+        fuente_identificable: false,
+        alcance_de_la_evidencia: 'ninguno',
+      },
+      score: [0.0, 0.3],
+    },
+    nota: 'Otra normativa. El criterio pregunta si la afirmacion SE APOYA en una autoridad, no si la menciona.',
   },
 
   // ---------------------------------------------------- ambiguos a proposito
