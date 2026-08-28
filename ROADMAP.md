@@ -153,8 +153,49 @@ Tres cosas salen de acá:
    X, Y fue atacado» atribuye causa sin usar una sola palabra causal. No hay conector que agregar:
    el prefiltro no puede capturarla por construcción, y `--sin-prefiltro` es la única vía.
 
-**Criterio de aceptación: cumplido.** Falta repetir todo sobre un discurso en español, para no
-generalizar desde un solo caso, y con la corrida en español ya arreglada por el desolapado.
+### La repetición en español
+
+Primer intento (`vHpcbKTNiG0`): 2202 palabras, 60 afirmaciones, **cero** sobre el umbral. Sin
+denominador no hay recall. Material demasiado corto y poco argumentativo — no es un fallo de la
+herramienta: el 8% de afirmaciones con conector coincidió con el del discurso en inglés.
+
+Segundo intento (`7SM-6TQM21A`, ASR en español), con material que sí argumenta:
+
+```
+868 cues -> 224 afirmaciones
+con conector causal: 12 (5%)
+sobre el umbral 0.70: 3   ->  2 capturadas, 1 perdida
+recall crudo: 66,7%   ahorro de computo: 95%
+```
+
+La única perdida:
+
+> «Cada día de resoluciones vetadas en el Consejo de Seguridad de la ONU, cada día que pasa son más
+> los niños bombardeados.»
+
+**Causalidad por yuxtaposición.** «Cada día X, cada día más Y» atribuye causa sin una sola palabra
+causal. No es un hueco del gate: no hay conector que agregar. Es el mismo límite que apareció en
+inglés con «Bajo la administración X, el espíritu de innovación fue atacado».
+
+**Recall adjudicado sobre afirmaciones con marca léxica: 2 de 2.**
+
+Nota al margen que confirma lo anterior: la ASR transcribió «resoluciones vetadas» como «emociones
+vetadas». Es un error real de transcripción — y no tocó ningún conector causal. Tercera evidencia
+independiente de que la tolerancia fonética en el prefiltro apunta al problema equivocado.
+
+### Las tres mediciones juntas
+
+| discurso | idioma | fuente | afirm. | con conector | sobre umbral | perdidas | adjudicación |
+|---|---|---|---|---|---|---|---|
+| cripto | en | publicados | 376 | 30 (8%) | 6 | 3 | 1 hueco + 2 falsos positivos |
+| cripto | en | ASR | 498 | 29 (6%) | 7 | 4 | 1 hueco + 2 FP + 1 implícita |
+| ONU | es | ASR | 224 | 12 (5%) | 3 | 1 | 1 implícita |
+
+**Se encontraron exactamente dos huecos reales del gate en tres corridas: `drove` y `and so`.** Los
+dos están corregidos y con test fijo. Descontando falsos positivos del modelo y causalidad
+implícita, **el prefiltro no perdió ninguna afirmación con marca léxica causal.**
+
+**Criterio de aceptación: cumplido**, en dos idiomas y por las dos vías de ingesta.
 
 ---
 

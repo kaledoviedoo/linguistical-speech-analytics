@@ -160,6 +160,15 @@ comprobar(
   marcadoresCausales('But the blockade has been 100 percent successful.').length === 0,
 );
 comprobar(
+  // Caso real del discurso en espanol. Es causalidad por YUXTAPOSICION: "cada dia X,
+  // cada dia mas Y" atribuye causa sin una sola palabra causal. El prefiltro no puede
+  // capturarla por construccion, y agregar conectores no ayudaria: no hay ninguno.
+  'Prefiltro (caso real, es): la causalidad implicita no deja rastro lexico',
+  marcadoresCausales(
+    'Cada dia de resoluciones vetadas en el Consejo de Seguridad de la ONU, cada dia que pasa son mas los ninos bombardeados.',
+  ).length === 0,
+);
+comprobar(
   'Prefiltro (caso real): no dispara con una orden ejecutiva sin lenguaje causal',
   marcadoresCausales(
     'And it started first with this executive order, which came out ordering the agencies in his administration to take steps in this direction.',
