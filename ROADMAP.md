@@ -264,8 +264,8 @@ real significa copiarlo tal cual, aunque quede largo, o se está anotando otra c
 El caso `a03` también cambió de respuesta respecto de la corrida en la otra máquina — más evidencia
 de que el determinismo no cruza de máquina.
 
-**Criterio de aceptación: cumplido.** El recall crudo de 10% no es el número honesto —el adjudicado
-es 1 hueco real sobre 3 pérdidas atribuibles al gate— pero lo que importa de la fase es lo que
+**Criterio de aceptación: cumplido.** El recall crudo de 10% no es el número honesto, el adjudicado
+es 1 hueco real sobre 3 pérdidas atribuibles al gate, pero lo que importa de la fase es lo que
 destapó: una rama del criterio sin implementar, un límite estructural documentado, un conjunto de
 control demasiado benévolo, y la confirmación de que el corte de la ASR es el cuello de botella real
 de la calidad.
