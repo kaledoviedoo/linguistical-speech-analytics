@@ -1,12 +1,12 @@
 # Arquitectura
 
-Decisiones de diseño del auditor, y —tan importante como eso— las que se decidieron **no** tomar.
+Decisiones de diseño del auditor, y decisiones que no se quisieron tomar
 
 ---
 
 ## El problema que había
 
-El proyecto se llama «auditor de estructura argumental», pero solo sabía auditar **una** estructura.
+El proyecto se llama «auditor de estructura argumental», pero solo sabía auditar una estructura.
 Los cinco campos del análisis de framing causal (`tiene_lenguaje_causal_fuerte`,
 `score_framing_causal`, …) estaban escritos a mano en seis módulos de producción:
 
@@ -19,8 +19,8 @@ src/reporte/generar.ts       mapeaba los tres booleanos a columnas
 src/analisis/recall-prefiltro.ts   leía el score
 ```
 
-Agregar una segunda pregunta —apelación a autoridad, generalización desde una anécdota, falso
-dilema— significaba tocar los seis y arriesgarse a romper el que ya funciona. Y el prefiltro léxico,
+Agregar una segunda pregunta (apelación a autoridad, generalización desde una anécdota, falso
+dilema) significaba tocar los seis y arriesgarse a romper el que ya funciona. Y el prefiltro léxico,
 que solo busca conectores causales, estaba cableado directo en la segmentación.
 
 Además, `motor/analizar.ts` importaba el cliente HTTP de Ollama. Consecuencia concreta: para testear
@@ -33,7 +33,7 @@ debería necesitar un socket.
 
 ### 1. El criterio de auditoría como unidad
 
-Un **criterio** junta en un solo lugar todo lo específico de una pregunta: el prompt, el esquema de
+Un criterio junta en un solo lugar todo lo específico de una pregunta: el prompt, el esquema de
 salida, la validación, el gate léxico del prefiltro y cómo se muestra el resultado.
 
 ```
@@ -47,7 +47,7 @@ src/criterios/
 ```
 
 **El contrato universal es corto a propósito.** El pipeline solo necesita tres cosas de cualquier
-criterio: un **score** entre 0 y 1, una **justificación** obligatoria, y unos **marcadores** para
+criterio: un score entre 0 y 1, una justificación obligatoria, y unos marcadores para
 mostrar. Todo lo demás es privado del criterio.
 
 ```ts
@@ -65,7 +65,7 @@ auditable aunque el reporte solo lea las tres primeras claves.
 
 **El `tono` es la pieza que desacopla el reporte.** El reporte ya no sabe qué significa
 «contrafactual»: recibe una etiqueta y un tono, y pinta un chip. `tono` no es un juicio moral — dice
-si ese rasgo **suma o resta defensa** a la afirmación. Tener lenguaje causal fuerte resta; tener
+si ese rasgo suma o resta defensa a la afirmación. Tener lenguaje causal fuerte resta; tener
 comparación suma.
 
 Medición antes y después:
