@@ -40,7 +40,7 @@ El prefiltro descarta entre el 92% y el 98% del texto sin gastar un token, que e
 
 Sin servidor, sin base de datos, sin claves de API, sin llamadas a la nube.
 
-## Features
+## Features principales
 
 - **Dos criterios de auditoría**: framing causal y apelación a autoridad no verificable. Agregar uno nuevo es escribir una carpeta y una línea en el registro.
 - **Score derivado y determinista** en el criterio causal, porque el modelo colapsaba la escala (13 de 22 respuestas en 0.85). Derivarlo subió el acierto de 68% a 91%.
@@ -51,7 +51,7 @@ Sin servidor, sin base de datos, sin claves de API, sin llamadas a la nube.
 - **Herramientas de medición incluidas**: recall del prefiltro, latencia desglosada y comparación de modelos.
 - **155 tests offline** que no necesitan Ollama ni red, más un arnés que valida cada criterio contra su conjunto de control (91% de exactitud por campo en la última medición).
 
-## Getting started
+## Instalación (Getting Started)
 
 Requisitos: Node.js 18.17+, Ollama, y opcionalmente ffmpeg (audio y video) y yt-dlp (links).
 
