@@ -151,7 +151,4 @@ El sistema audita la **estructura del argumento**, no la veracidad del hecho. Fu
 
 ## Contacto
 
-Kaled Oviedo
-
-- Instagram: [@kaledoviedoo](https://instagram.com/kaledoviedoo)
-- GitHub: [github.com/kaledoviedoo](https://github.com/kaledoviedoo)
+**Kaled Oviedo** · [@kaledoviedoo](https://instagram.com/kaledoviedoo) en Instagram · [github.com/kaledoviedoo](https://github.com/kaledoviedoo)
