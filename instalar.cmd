@@ -33,8 +33,8 @@ goto listo
 
 :sin_node
 echo [ERROR] No encuentro Node.js en el PATH.
-echo         Instalalo desde https://nodejs.org  -  elegi la version LTS.
-echo         Despues cerra esta ventana, abri una nueva y volve a correr instalar.cmd
+echo         Puedes instalarlo desde https://nodejs.org  -  elige la version LTS.
+echo         Despues cierra esta ventana, abre una nueva y vuelve a correr instalar.cmd
 exit /b 1
 
 :fallo_npm
@@ -43,10 +43,10 @@ exit /b 1
 
 :sin_ollama
 echo [AVISO] Ollama no esta en el PATH.
-echo         Instalalo con:   winget install --id Ollama.Ollama -e
-echo         O descargalo de  https://ollama.com/download
+echo         Para instalarlo:   winget install --id Ollama.Ollama -e
+echo         O puedes descargarlo de  https://ollama.com/download
 echo.
-echo         Despues cerra esta ventana, abri una nueva y corre:
+echo         Despues cierra esta ventana, abre una nueva y corre:
 echo             ollama pull qwen2.5:3b
 echo.
 echo Las dependencias de Node ya quedaron instaladas.
@@ -55,7 +55,7 @@ exit /b 0
 :fallo_pull
 echo [ERROR] "ollama pull qwen2.5:3b" fallo.
 echo         Verifica que Ollama este corriendo: busca su icono en la bandeja del sistema,
-echo         o arrancalo a mano con:  ollama serve
+echo         o para iniciarlo manualmente:  ollama serve
 exit /b 1
 
 :listo

@@ -1,15 +1,12 @@
 /**
  * Maquinaria del prefiltro lexico. Generica: no sabe que se busca.
  *
- * Por que existe el prefiltro: mandar cada oracion de un discurso de 40 minutos al
- * LLM local es desperdiciar computo. Cada criterio de auditoria deja un rastro lexico
- * propio —el causal deja "provoco", uno de apelacion a autoridad deja "los expertos"—
- * asi que solo lo que trae ese rastro viaja al modelo. Se puede desactivar con
- * --sin-prefiltro, y `npm run medir` cuantifica que se pierde a cambio.
+ * Compila la lista de patrones de un criterio a expresiones regulares una sola vez y las
+ * aplica sobre texto normalizado (minusculas, sin tildes). Solo lo que trae rastro viaja
+ * al modelo, que es lo que hace viable ejecutar esto en CPU.
  *
- * Este modulo aporta las piezas; cada criterio aporta su lista.
+ * Cada criterio aporta su lista; este modulo aporta las piezas.
  */
-
 export interface EntradaLexica {
   /** Patron ya normalizado (minusculas, sin tildes). Los espacios aceptan cualquier blanco. */
   patron: string;

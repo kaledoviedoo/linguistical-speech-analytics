@@ -1,22 +1,13 @@
 /**
- * Que es un CRITERIO DE AUDITORIA.
+ * El contrato de un CRITERIO de auditoria.
  *
- * El proyecto se llama "auditor de estructura argumental", pero hasta ahora solo
- * sabia auditar UNA estructura: el framing causal. Los cinco campos de ese analisis
- * estaban escritos a mano en seis modulos distintos — tipos, validador, prompt,
- * pipeline, reporte y el medidor de recall. Agregar una segunda pregunta (apelacion
- * a autoridad, generalizacion desde una anecdota, falso dilema) significaba tocar
- * los seis y arriesgarse a romper el que ya funciona.
+ * Un criterio junta en un solo lugar todo lo especifico de una pregunta: prompt, esquema
+ * de salida, validacion, score, gate lexico del prefiltro y como se muestra. El resto del
+ * sistema (ingesta, segmentacion, cache, concurrencia, reporte) no sabe nada del contenido.
  *
- * Un criterio junta en un solo lugar todo lo que es especifico de UNA pregunta:
- * el prompt, el esquema de salida, como se valida, como se puntua, que conectores
- * lexicos lo delatan, y como se muestra. El resto del sistema —ingesta, segmentacion,
- * cache, concurrencia, reporte— no sabe nada del contenido.
- *
- * El contrato universal, lo unico que el pipeline necesita de cualquier criterio:
- * un SCORE entre 0 y 1, una JUSTIFICACION obligatoria, y unos MARCADORES para mostrar.
+ * El contrato universal es corto a proposito: un score entre 0 y 1, una justificacion y
+ * unos marcadores para mostrar. Todo lo demas es privado del criterio.
  */
-
 /** Como se pinta un marcador en el reporte, sin que el reporte sepa que significa. */
 export type Tono = 'bueno' | 'malo' | 'neutro';
 
@@ -76,8 +67,8 @@ export interface Criterio<T extends object = Record<string, unknown>> {
 }
 
 /**
- * Lo que se guarda por afirmacion. Deliberadamente auto-descriptivo: `campos` conserva
- * la respuesta del modelo tal cual, asi resultados.json sigue siendo auditable aunque
+ * Lo que se guarda por afirmacion. `campos` conserva la respuesta del modelo tal cual,
+ * asi resultados.json sigue siendo auditable aunque
  * el reporte solo lea score, justificacion y marcadores.
  */
 export interface EvaluacionAfirmacion {

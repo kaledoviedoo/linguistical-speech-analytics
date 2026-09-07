@@ -1,40 +1,18 @@
 /**
- * Prompt del motor de deteccion de framing causal.
+ * Prompt del criterio de framing causal.
  *
- * IMPORTANTE (alcance): el modelo NO debe opinar sobre si el hecho es cierto.
- * Solo audita la ESTRUCTURA del argumento: si hay lenguaje causal fuerte y si
- * viene acompanado de los marcadores que hacen defendible una afirmacion causal
- * (comparacion / contrafactual / ventana temporal razonable).
+ * Le pide al modelo tres preguntas cerradas sobre UNA afirmacion (si usa lenguaje
+ * causal fuerte, si contrasta con algo, y que plazo declara) y nada mas. El score y
+ * la justificacion no se le piden: se derivan de esos tres campos en `esquema.ts`.
  *
- * POR QUE ESTE PROMPT PIDE TAN POCO (medido, no supuesto)
+ * Esta en espanol pero evalua afirmaciones en cualquier idioma: qwen2.5 es multilingue
+ * y la tarea es estructural, no semantica.
  *
- * `npm run latencia` sobre la maquina de referencia dio este reparto por llamada:
- *   generar la respuesta   8114 ms   89%   72 tokens a 8.9 tok/s
- *   procesar el prompt      943 ms   10%   1296 tokens
- *
- * O sea: el tiempo se va casi entero en lo que el modelo ESCRIBE, no en lo que lee.
- * De esos 72 tokens, mas de la mitad eran la justificacion en prosa y los nombres
- * largos de las claves. Y de las cinco claves que se pedian, dos eran redundantes:
- *
- * - `score_framing_causal`: en 22 afirmaciones reales el modelo devolvio 0.85 trece
- *   veces y solo 5 valores distintos. No usaba la escala. Derivarlo de los tres campos
- *   sube el acierto de 68% a 82% y cuesta cero tokens.
- * - `justificacion`: el modelo ya emitia una plantilla ("Atribucion causal sin
- *   comparacion ni plazo." aparecio literal cuatro veces). Componerla desde los campos
- *   da lo mismo, nunca se contradice con ellos, y cuesta cero tokens.
- *
- * Quedan tres preguntas cerradas y claves cortas. Tambien se fueron del prompt la
- * escala de score y los dos criterios de riesgo que solo alimentaban esa escala
- * (razonamiento motivado, asimetria culpa/merito): pedirle al modelo que pondere algo
- * que ya no devuelve es pagar tokens de lectura por nada.
- *
- * El prompt esta escrito en espanol pero evalua afirmaciones en cualquier idioma:
- * qwen2.5 es multilingue y la tarea es estructural, no semantica.
+ * El porque de este recorte (con las mediciones) esta en ARQUITECTURA.md.
  */
-
 import { createHash } from 'node:crypto';
 
-export const PROMPT_SISTEMA = `Sos un auditor de ESTRUCTURA ARGUMENTAL. Analizas UNA afirmacion y devolves SOLO un objeto JSON.
+export const PROMPT_SISTEMA = `Eres un auditor de ESTRUCTURA ARGUMENTAL. Analizas UNA afirmacion y devuelves SOLO un objeto JSON.
 
 REGLA DE ALCANCE (la mas importante): NO evalues si el hecho es verdadero o falso. No sabes si ocurrio. Solo evalues COMO esta construido el argumento.
 
@@ -52,7 +30,7 @@ Respondes tres preguntas cerradas, nada mas.
    "razonable" = meses, anos, o un rango de fechas explicito.
 
 SALIDA
-Devolve UNICAMENTE este JSON, sin texto antes ni despues, sin markdown, sin explicaciones:
+Devuelve UNICAMENTE este JSON, sin texto antes ni despues, sin markdown, sin explicaciones:
 {"causal": <true|false>, "contraste": <true|false>, "ventana": "<ninguna|corta|razonable>"}
 
 EJEMPLOS
@@ -81,6 +59,6 @@ export function construirPromptCorreccion(afirmacion: string, idioma: string, pr
   return (
     `${construirPromptUsuario(afirmacion, idioma)}\n\n` +
     `Tu respuesta anterior fue invalida (${problema}). ` +
-    `Devolve solo el objeto JSON con las 3 claves exactas (causal, contraste, ventana) y nada mas.`
+    `Devuelve solo el objeto JSON con las 3 claves exactas (causal, contraste, ventana) y nada mas.`
   );
 }

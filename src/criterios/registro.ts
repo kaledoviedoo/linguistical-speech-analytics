@@ -1,10 +1,8 @@
 /**
  * Registro de criterios disponibles.
  *
- * A proposito es un objeto literal y no un cargador dinamico que escanee carpetas:
- * con dos o tres criterios, un `import` explicito es mas claro, mas rapido y deja que
- * TypeScript verifique todo. Si algun dia hay diez, se cambia; hoy seria complejidad
- * sin beneficio.
+ * Un objeto literal con `import` explicitos, no un cargador dinamico: con dos o tres
+ * criterios es mas claro, mas rapido y deja que TypeScript verifique todo.
  */
 import type { Criterio } from './tipos.js';
 import { criterioFramingCausal } from './framing-causal/index.js';

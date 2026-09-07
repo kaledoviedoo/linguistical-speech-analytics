@@ -1,8 +1,6 @@
 /**
- * Decodificacion de audio a PCM mono 16 kHz, que es lo unico que Whisper acepta.
- *
- * Se usa ffmpeg (subproceso local) para normalizar cualquier contenedor -> WAV,
- * y wavefile (JS puro) para leer las muestras sin dependencias nativas.
+ * Normaliza cualquier contenedor de audio o video a WAV mono de 16 kHz, que es lo unico
+ * que Whisper acepta. Usa ffmpeg como subproceso local y devuelve las muestras en memoria.
  */
 import fs from 'node:fs';
 import path from 'node:path';

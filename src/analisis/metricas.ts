@@ -1,14 +1,12 @@
 /**
- * Metricas de evaluacion. Funciones puras, sin dependencias y testeables offline.
+ * Metricas del arnes de validacion.
  *
- * Por que existe este archivo: hasta ahora el test del prompt decia "coincide 7 de 10",
- * y ese numero agregado esconde lo unico que importa saber. Un modelo puede acertar el
- * score y equivocarse sistematicamente en si hay comparacion — y ese error es peor,
- * porque la comparacion es la mitad de la tesis del proyecto.
+ * Cuenta aciertos campo por campo (no solo el score global) porque un modelo puede
+ * acertar el score y equivocarse en si hay comparacion, que es el error mas caro.
  *
- * Aca se mide campo por campo.
+ * Booleanos: matriz binaria con precision, sensibilidad y F1. Enums: matriz de N valores.
+ * Score: proporcion dentro del rango esperado y error medio contra el punto medio.
  */
-
 /** Conteos de una clasificacion binaria, tomando `true` como la clase positiva. */
 export interface ConteoBinario {
   /** Verdaderos positivos: esperado true, obtenido true. */
@@ -124,7 +122,7 @@ export function metricasScore(pares: { obtenido: number; rango: [number, number]
   };
 }
 
-/** "0.83" o "n/d" — para no repetir el mismo formateo en cada reporte. */
+/** "0.83" o "n/d" (para no repetir el mismo formateo en cada reporte). */
 export function pct(v: number | null): string {
   return v === null ? ' n/d' : `${(v * 100).toFixed(0).padStart(3)}%`;
 }

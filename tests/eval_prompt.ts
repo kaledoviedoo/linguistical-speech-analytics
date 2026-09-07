@@ -1,25 +1,14 @@
 /**
- * Validacion de un criterio contra el modelo local, campo por campo.
+ * Validacion del criterio contra su conjunto de control (necesita Ollama).
  *
  *   npm run test:prompt
- *   npm run test:prompt -- --criterio apelacion-autoridad
- *   npm run test:prompt -- --modelo qwen2.5:1.5b
- *   npm run test:prompt -- --rapido                  (solo los 10 primeros)
+ *   npm run test:prompt -- --criterio apelacion-autoridad --modelo qwen2.5:1.5b
  *   npm run test:prompt -- --guardar medidas.json
  *
- * Tres cosas, en este orden de importancia:
+ * Dos renglones son bloqueantes (cumplimiento del esquema y determinismo a temperatura 0).
+ * El resto es diagnostico: exactitud campo por campo, matrices de confusion y tok/s.
  *
- *  1. BLOQUEANTE   el JSON respeta SIEMPRE el esquema estricto del criterio.
- *  2. BLOQUEANTE   con temperature 0 la salida es reproducible.
- *  3. DIAGNOSTICO  precision y sensibilidad de CADA campo por separado.
- *
- * El punto 3 es el que cambia decisiones. Un agregado tipo "acierta 7 de 10" esconde
- * el error que mas importa: un modelo puede clavar el score y equivocarse siempre en
- * un campo, y ese sesgo invalida la tesis del criterio sin que se note en el promedio.
- *
- * El arnes NO conoce los campos de ningun criterio. Cada caso de control declara que
- * espera por clave, y aca se compara clave por clave: booleanos a matriz binaria,
- * enums a matriz de N valores. Por eso sirve igual para un criterio nuevo.
+ * Es agnostico del criterio: los campos a comparar los declara el conjunto de control.
  */
 import fs from 'node:fs';
 import { MODELO_LLM, OPCIONES_OLLAMA, REINTENTOS_LLM, URL_OLLAMA } from '../src/config.js';
@@ -262,7 +251,7 @@ async function principal(): Promise<void> {
       gris(`(${Math.round(tokens / Math.max(1, SELECCION.length))} tokens por respuesta)`),
   );
   if (tokPorSeg > 0 && tokPorSeg < 25) {
-    console.log(amarillo('  Ese ritmo es de CPU, no de GPU. Corre "npm run benchmark" para el detalle.'));
+    console.log(amarillo('  Ese ritmo es de CPU, no de GPU. Ejecuta "npm run benchmark" para el detalle.'));
   }
 
   if (fallosEsquema.length > 0) {
@@ -309,7 +298,7 @@ async function principal(): Promise<void> {
   const pasa = esquemaOk === SELECCION.length && deterministico;
   console.log(
     pasa
-      ? verde('\nEl modelo respeta el esquema y es reproducible. Podes procesar archivos completos.')
+      ? verde('\nEl modelo respeta el esquema y es reproducible. Puedes procesar archivos completos.')
       : rojo('\nRevisa el modelo o el prompt antes de procesar un archivo completo.'),
   );
 

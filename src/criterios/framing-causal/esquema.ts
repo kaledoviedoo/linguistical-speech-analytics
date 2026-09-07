@@ -1,28 +1,21 @@
 /**
  * Esquema y validacion del criterio de framing causal.
  *
- * La reparacion generica de salidas de un modelo chico —desenvolver el JSON de entre
- * prosa, aceptar "si" como booleano— vive en `criterios/validacion.ts` y la comparten
- * todos los criterios. Aca queda solo lo propio de esta pregunta.
+ * El modelo devuelve tres claves cortas (`causal`, `contraste`, `ventana`). Este modulo
+ * las valida, deriva el score con `derivarScore` y compone la justificacion con
+ * `componerJustificacion`, y las expande a los nombres largos del tipo de dominio, para
+ * que `resultados.json`, el reporte y los casos de control no dependan del formato de cable.
  *
- * QUE PIDE EL MODELO Y QUE CALCULAMOS NOSOTROS
- *
- * El modelo devuelve tres claves cortas: `causal`, `contraste`, `ventana`. El score y la
- * justificacion NO se le piden: se derivan de esos tres campos (ver `derivarScore` y
- * `componerJustificacion`). El tipo de dominio conserva las cinco claves largas de
- * siempre, asi que `resultados.json`, el reporte y los casos de control no cambian:
- * lo unico que se encogio es lo que viaja por el cable.
+ * La reparacion generica de salidas de un modelo chico (JSON envuelto en prosa, "si" como
+ * booleano) vive en `criterios/validacion.ts` y la comparten todos los criterios.
  */
 import type { ResultadoValidacion } from '../tipos.js';
 import { aBooleano, extraerJSON, normalizarEnum } from '../validacion.js';
 
-/**
- * Ventana temporal declarada por el hablante. Es un campo PROPIO de este criterio:
- * vive aca y no en los tipos globales, porque otro criterio no tiene por que tenerlo.
- */
+/** Ventana temporal declarada por el hablante (campo propio de este criterio). */
 export type VentanaTemporal = 'ninguna' | 'corta' | 'razonable';
 
-/** Esquema estricto del criterio. Las dos ultimas claves las completamos nosotros. */
+/** Tipo de dominio. Las dos ultimas claves no vienen del modelo, se calculan aqui. */
 export interface EvaluacionFramingCausal {
   tiene_lenguaje_causal_fuerte: boolean;
   tiene_contrafactual_o_comparacion: boolean;
@@ -55,15 +48,9 @@ function aVentana(v: unknown): VentanaTemporal | null {
 }
 
 /**
- * El score sale de los tres campos, no del modelo.
+ * Score derivado de los tres campos (el modelo no lo devuelve).
  *
- * Motivo medido: en 22 afirmaciones reales el modelo contesto 0.85 trece veces y uso
- * solo 5 valores distintos en total. Con un score casi constante, el umbral del reporte
- * y su deslizador no pueden discriminar nada. Derivarlo sube el acierto de 68% a 82%
- * sobre el conjunto de control, y encima lo hace reproducible.
- *
- * La escala es la del prompt original, ahora aplicada de forma deterministica:
- * lo mas fragil es afirmar causa sin ningun contraste y ademas con un plazo corto.
+ * Lo mas fragil es afirmar causa sin ningun contraste y ademas con un plazo corto.
  */
 export function derivarScore(
   causal: boolean,
@@ -77,13 +64,7 @@ export function derivarScore(
   return 0.75;
 }
 
-/**
- * La justificacion tambien sale de los campos.
- *
- * El modelo ya escribia una plantilla: "Atribucion causal sin comparacion ni plazo."
- * aparecio literal cuatro veces en 22 casos. Componerla nosotros da lo mismo, cuesta
- * cero tokens, y elimina la posibilidad de que contradiga a los campos que la acompanan.
- */
+/** Justificacion compuesta desde los campos, para que nunca los contradiga. */
 export function componerJustificacion(
   causal: boolean,
   contraste: boolean,
@@ -101,10 +82,7 @@ export function componerJustificacion(
   ].join(', ') + '.';
 }
 
-/**
- * Valida y normaliza. Devuelve tambien la lista de ajustes aplicados,
- * para que el reporte pueda mostrar cuando el modelo se salio del esquema.
- */
+/** Valida y normaliza. Los `ajustes` dejan constancia de lo que hubo que corregir. */
 export function validarEvaluacion(bruto: unknown): ResultadoValidacion<EvaluacionFramingCausal> {
   if (typeof bruto !== 'object' || bruto === null || Array.isArray(bruto)) {
     return { ok: false, problema: 'la respuesta no es un objeto JSON' };

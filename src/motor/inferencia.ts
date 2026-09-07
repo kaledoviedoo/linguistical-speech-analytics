@@ -1,16 +1,9 @@
 /**
- * El motor de inferencia como PUERTO, no como implementacion.
+ * El motor de inferencia como puerto.
  *
- * Antes, `analizar.ts` importaba el cliente de Ollama directamente. Eso tenia dos
- * costos concretos:
- *
- *  - Para testear el motor de evaluacion habia que levantar un servidor HTTP falso
- *    en el puerto 11434. Un test de logica no deberia necesitar un socket.
- *  - Cambiar de backend (llama.cpp, LM Studio, un Ollama remoto en la LAN) obligaba
- *    a tocar el bucle de evaluacion, que no tiene nada que ver con el transporte.
- *
- * Con esta interfaz, el bucle de evaluacion solo sabe "algo que convierte un prompt
- * en texto". Ollama es UNA implementacion; `motorDeGuion` es otra, para tests.
+ * `motorOllama` habla con el servidor real; `motorDeGuion` devuelve respuestas de un guion
+ * en orden y registra que se le pidio. Gracias a eso el bucle de evaluacion (reintentos,
+ * concurrencia, orden preservado) se prueba sin levantar ningun proceso externo.
  */
 import { generar as generarOllama } from './ollama.js';
 

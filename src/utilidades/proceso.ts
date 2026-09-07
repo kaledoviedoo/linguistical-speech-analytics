@@ -101,20 +101,20 @@ export function instruccionesInstalacion(comando: string): string {
   const esWindows = process.platform === 'win32';
   const guias: Record<string, { win: string; otros: string }> = {
     'yt-dlp': {
-      win: 'winget install --id yt-dlp.yt-dlp -e    (despues cerra y volve a abrir la terminal)',
+      win: 'winget install --id yt-dlp.yt-dlp -e    (despues cierra y vuelve a abrir la terminal)',
       otros: 'brew install yt-dlp   |   pipx install yt-dlp   |   sudo apt install yt-dlp',
     },
     ffmpeg: {
-      win: 'winget install --id Gyan.FFmpeg -e      (despues cerra y volve a abrir la terminal)',
+      win: 'winget install --id Gyan.FFmpeg -e      (despues cierra y vuelve a abrir la terminal)',
       otros: 'brew install ffmpeg   |   sudo apt install ffmpeg',
     },
     ollama: {
-      win: 'winget install --id Ollama.Ollama -e    (despues cerra y volve a abrir la terminal)',
+      win: 'winget install --id Ollama.Ollama -e    (despues cierra y vuelve a abrir la terminal)',
       otros: 'https://ollama.com/download',
     },
   };
   const g = guias[comando];
-  if (!g) return 'Instalalo y volve a intentar.';
+  if (!g) return 'Instala esa herramienta y vuelve a intentar.';
   return esWindows ? g.win : g.otros;
 }
 

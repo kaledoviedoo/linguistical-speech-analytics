@@ -1,13 +1,11 @@
 /**
  * Criterio de auditoria: APELACION A AUTORIDAD NO VERIFICABLE.
  *
- * Detecta afirmaciones que se apoyan en una autoridad —expertos, estudios, la ciencia,
- * el saber comun— sin dar lo que haria falta para ir a comprobarlas: quien lo dice, y
- * de que evidencia se habla.
+ * Detecta afirmaciones que se apoyan en expertos, estudios o el saber comun sin una
+ * fuente identificable ni evidencia concreta.
  *
- * Igual que el criterio causal, NO verifica el hecho. La diferencia es de que trata la
- * pregunta: alli era si el argumento admite ser contrastado; aca es si la fuente admite
- * ser rastreada. Las dos son propiedades del texto, no del mundo.
+ * Existe ademas para probar la abstraccion: es una pregunta con otros campos, otro enum
+ * y otro rastro lexico, corriendo sobre el mismo pipeline sin tocarlo.
  */
 import type { Criterio, MarcadorMostrable, ResultadoValidacion } from '../tipos.js';
 import { GATE_AUTORIDAD, marcadoresDeAutoridad } from './marcadores.js';

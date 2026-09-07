@@ -1,16 +1,13 @@
 /**
- * Forma generica de un caso de control, valida para cualquier criterio.
+ * Forma de un caso de control, generica para cualquier criterio.
  *
- * Antes, el arnes de medicion conocia los cinco campos del criterio causal por su
- * nombre. Eso volvia imposible medir un criterio nuevo sin reescribir el arnes —el
- * mismo acoplamiento que se saco del pipeline, escondido en los tests.
+ * Cada caso declara que espera POR CLAVE, no por nombre de campo fijo, asi que el arnes
+ * compara sin conocer los campos del criterio: los booleanos van a una matriz binaria y
+ * los enums a una de N valores.
  *
- * Ahora el caso declara QUE espera por clave, y el arnes compara clave por clave:
- * los booleanos van a una matriz de confusion binaria, los enums a una de N valores.
- * No hace falta que el criterio describa sus campos: los declara el conjunto de control,
- * que es donde vive el juicio humano.
+ * `dificil: true` marca los casos ambiguos a proposito: se ejecutan y se muestran, pero
+ * no puntuan (meter casos discutibles en el denominador solo ensucia el numero).
  */
-
 export interface CasoControl {
   id: string;
   idioma: string;

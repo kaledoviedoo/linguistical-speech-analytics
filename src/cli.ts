@@ -1,10 +1,14 @@
 #!/usr/bin/env node
 /**
- * CLI del auditor de framing causal.
+ * CLI del auditor.
  *
  *   npm run analizar -- <link-o-ruta> [opciones]
  *
- * No levanta ningun servidor: hace el analisis, escribe un HTML y lo abre con file://.
+ * Ademas del analisis expone tres modos de diagnostico: --verificar-entorno revisa Node,
+ * Ollama, modelos y binarios; --benchmark mide tok/s reales; --medir-prefiltro evalua el
+ * archivo entero sin prefiltro para saber cuanto se pierde.
+ *
+ * No levanta ningun servidor: escribe un HTML y lo abre con file://.
  */
 import { pathToFileURL } from 'node:url';
 import {
@@ -152,7 +156,7 @@ export function parsearArgumentos(argv: string[]): Argumentos {
   return o;
 }
 
-/** Node 18.17+ hace falta para fetch nativo y AbortSignal.timeout. */
+/** Node 18.17+ por fetch nativo y AbortSignal.timeout. */
 function problemaDeNode(): string | null {
   const partes = process.versions.node.split('.').map((n) => Number.parseInt(n, 10));
   const mayor = partes[0] ?? 0;
@@ -160,7 +164,7 @@ function problemaDeNode(): string | null {
   if (mayor > 18 || (mayor === 18 && menor >= 17)) return null;
   return (
     `Este proyecto necesita Node 18.17 o superior, y estas usando ${process.version}.\n` +
-    `  Actualizalo desde https://nodejs.org (version LTS) y volve a abrir la terminal.`
+    `  Actualizalo desde https://nodejs.org (version LTS) y vuelve a abrir la terminal.`
   );
 }
 
@@ -184,15 +188,14 @@ async function verificarEntorno(o: Argumentos): Promise<number> {
       (estado.disponible ? gris(`  (v${estado.version ?? '?'})`) : gris(`  ${estado.error ?? ''}`)),
   );
   if (ollamaInstalado && !estado.disponible) {
-    log.info(gris('       arrancalo con:  ollama serve'));
+    log.info(gris('       para iniciarlo:  ollama serve'));
   }
 
-  // Sin servidor no se puede saber si el modelo esta o no. Decir "FALTA" seria mentir:
-  // manda a descargar de nuevo algo que probablemente ya este en disco.
+  // Sin servidor no se puede saber si el modelo esta. Decir "FALTA" seria mentir.
   const modeloOk = estado.disponible && tieneModelo(estado.modelos, o.modelo);
   if (estado.disponible) {
     log.info(`${marca(modeloOk)} Modelo "${o.modelo}"`);
-    if (!modeloOk) log.info(gris(`       descargalo con:  ollama pull ${o.modelo}`));
+    if (!modeloOk) log.info(gris(`       para descargarlo:  ollama pull ${o.modelo}`));
     if (estado.modelos.length > 0) {
       log.info(gris(`       modelos instalados: ${estado.modelos.join(', ')}`));
     }
@@ -226,7 +229,7 @@ async function verificarEntorno(o: Argumentos): Promise<number> {
     log.info(verde('Listo para analizar texto y subtitulos.') +
       (ffmpeg ? verde(' Audio y video tambien.') : gris(' Instala ffmpeg para audio y video.')) +
       (ytdlp ? verde(' Links tambien.') : gris(' Instala yt-dlp para links.')));
-    log.info(gris('Proba con:  npm run analizar -- tests/fixtures/discurso-es.srt'));
+    log.info(gris('Prueba con:  npm run analizar -- tests/fixtures/discurso-es.srt'));
   } else {
     log.info(rojo('Falta resolver lo marcado como FALTA antes de poder analizar.'));
   }
@@ -246,7 +249,7 @@ async function benchmark(o: Argumentos): Promise<number> {
 
   const estado = await estadoOllama(o.urlOllama);
   if (!estado.disponible || !tieneModelo(estado.modelos, o.modelo)) {
-    log.error(`Ollama no esta listo con "${o.modelo}". Corre primero: npm run verificar-entorno`);
+    log.error(`Ollama no esta listo con "${o.modelo}". Ejecuta primero: npm run verificar-entorno`);
     return 1;
   }
 
@@ -312,15 +315,15 @@ async function benchmark(o: Argumentos): Promise<number> {
   );
 
   if (cargado && cargado.porcentajeGPU <= 5) {
-    log.info(amarillo('\nEl modelo esta en CPU. Esto es lo que podes hacer:'));
+    log.info(amarillo('\nEl modelo esta en CPU. Esto es lo que puedes hacer:'));
     log.info('  1. Modelo mas chico:   npm run analizar -- <archivo> --modelo qwen2.5:1.5b');
-    log.info('     (primero: ollama pull qwen2.5:1.5b, y validalo con npm run test:prompt -- --modelo qwen2.5:1.5b)');
+    log.info('     (primero: ollama pull qwen2.5:1.5b, y para validarlo: npm run test:prompt -- --modelo qwen2.5:1.5b)');
     log.info(gris('  2. NO subas --concurrencia en CPU: cada peticion paralela mantiene su propio'));
     log.info(gris('     cache de prefijo y vuelve a pagar la evaluacion del prompt de sistema entera.'));
     log.info('  3. Menos material:     --limite 50  para probar antes de procesar todo.');
-    log.info(gris('  La cache hace que volver a correr el mismo archivo sea instantaneo.'));
+    log.info(gris('  La cache hace que volver a ejecutar el mismo archivo sea instantaneo.'));
   } else if (cargado) {
-    log.info(verde('\nEl modelo esta en GPU. Con --concurrencia 2-3 podes ganar mas throughput.'));
+    log.info(verde('\nEl modelo esta en GPU. Con --concurrencia 2-3 puedes ganar mas throughput.'));
   }
   log.info('');
   return 0;
@@ -424,7 +427,7 @@ async function principal(): Promise<number> {
       await open(url);
       log.info(azul('      Abriendolo en el navegador...'));
     } catch (e) {
-      log.aviso(`No pude abrir el navegador automaticamente (${(e as Error).message}). Abri el link de arriba.`);
+      log.aviso(`No pude abrir el navegador automaticamente (${(e as Error).message}). Abre el link de arriba.`);
     }
   }
   log.info('');

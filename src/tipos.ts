@@ -80,7 +80,7 @@ export interface ResumenAnalisis {
   scorePromedio: number;
   idiomas: Record<string, number>;
   msTotalLLM: number;
-  /** Diagnostico de rendimiento: cuello de botella real de la corrida. */
+  /** Diagnostico de rendimiento: cuello de botella real de la ejecucion. */
   rendimiento: {
     msCargaModelo: number;
     tokensGenerados: number;
@@ -109,7 +109,7 @@ export interface Resultados {
   resultados: ResultadoAfirmacion[];
 }
 
-/** Opciones efectivas de una corrida, ya resueltas desde CLI + entorno. */
+/** Opciones efectivas de una ejecucion, ya resueltas desde CLI + entorno. */
 export interface OpcionesCorrida {
   entrada: string;
   modelo: string;

@@ -247,7 +247,7 @@ export const JS_REPORTE = `
   }
 
   // El reporte no sabe que significa cada marcador: el criterio le manda una etiqueta
-  // y un tono, y aca solo se pintan. Un criterio nuevo se muestra sin tocar esto.
+  // y un tono, y aqui solo se pintan. Un criterio nuevo se muestra sin tocar esto.
   var CLASE_TONO = { bueno: 'si', malo: 'no', neutro: '' };
 
   function etiquetasDe(f) {

@@ -1,13 +1,9 @@
 /**
- * Rastro lexico de la apelacion a autoridad.
+ * Rastro lexico de la apelacion a autoridad, en 4 idiomas.
  *
- * Una apelacion a autoridad casi siempre nombra la fuente de prestigio de forma
- * generica: "los expertos", "los estudios", "esta demostrado". Ese es el rastro.
- *
- * La lista es deliberadamente mas selectiva que la causal. "Los datos" o "el informe"
- * a secas aparecen todo el tiempo en discurso economico sin ser apelaciones a
- * autoridad, asi que solo entran en construcciones que si lo son ("segun los datos").
- * Preferir precision aca es barato: lo que se escape lo detecta `npm run medir`.
+ * Mas selectivo que el causal a proposito: "los datos" o "el informe" a secas aparecen
+ * todo el tiempo en discurso economico sin ser apelaciones, asi que solo entran en
+ * construcciones que si lo son ("segun los datos").
  */
 import { compilarGate, lista, type EntradaLexica } from '../../procesamiento/prefiltro.js';
 
@@ -30,9 +26,7 @@ const ENTRADAS: EntradaLexica[] = [
     ['organismos internacionales', 'organismos internacionales'],
     ['la comunidad cientifica', 'la comunidad científica'],
     ['quedo demostrado', 'quedó demostrado'], ['ha quedado claro', 'ha quedado claro'],
-    // Hallado midiendo sobre un discurso real: "Saben que unir la energia limpia...".
-    // El gate tenia "todos sabemos" y "todo el mundo sabe" pero no la forma hablada de
-    // dirigirse al auditorio, que es la mas frecuente en un discurso.
+    // La forma hablada de dirigirse al auditorio, que es la mas frecuente en un discurso.
     ['saben que', 'saben que'], ['sabemos que', 'sabemos que'], ['ya saben', 'ya saben'],
     ['como saben', 'como saben'], ['ustedes saben', 'ustedes saben'],
   ]),

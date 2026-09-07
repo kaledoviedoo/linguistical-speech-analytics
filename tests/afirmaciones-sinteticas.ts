@@ -1,16 +1,14 @@
 /**
- * Conjunto de control del motor de deteccion.
+ * Conjunto de control del criterio de framing causal (24 casos).
  *
- * No son citas reales de nadie: estan escritas para cubrir los casos limite del
- * esquema. La regla al escribirlas fue una sola — **la respuesta correcta tiene que
- * deducirse de las definiciones del prompt**, no de la opinion de quien anota.
+ * Regla al escribirlos: la respuesta correcta tiene que deducirse de las definiciones del
+ * prompt, no de la opinion de quien anota. Cubren los limites del criterio (causalidad
+ * negada, contrafactual explicito, cadena de tres eslabones, correlacion declarada como
+ * tal) en seis idiomas.
  *
- * Los casos marcados `dificil: true` son aquellos donde personas razonables pueden
- * discrepar (atribucion a terceros, causalidad parcial). Se ejecutan y se muestran,
- * pero NO cuentan para las metricas: meter casos ambiguos en el denominador solo
- * sirve para ensuciar el numero.
+ * Ninguno dice si el hecho es cierto. Solo si el argumento trae los marcadores que lo
+ * harian defendible.
  */
-
 import type { CasoControl, ConjuntoDeControl } from './casos-tipos.js';
 
 export const CASOS: CasoControl[] = [

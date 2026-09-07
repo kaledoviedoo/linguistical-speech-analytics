@@ -50,7 +50,7 @@ export const OPCIONES_OLLAMA = {
 /**
  * Cuanto tiempo deja Ollama el modelo cargado en memoria tras la ultima peticion.
  * Cargar qwen2.5:3b desde disco cuesta decenas de segundos; con esto se paga una vez
- * y no en cada corrida del CLI.
+ * y no en cada ejecucion del CLI.
  */
 export const KEEP_ALIVE = process.env.AFC_KEEP_ALIVE ?? '15m';
 
@@ -77,8 +77,8 @@ export const VERSION_ESQUEMA = 1;
  * Version del PARSEO de la transcripcion. Se sube a mano cada vez que cambia como se
  * convierte un .srt/.vtt/audio en segmentos.
  *
- * Existe porque ya nos mordio: al arreglar el desolapado de los subtitulos automaticos
- * de YouTube, la corrida siguiente seguia mostrando 2339 segmentos y 1386 afirmaciones.
+ * Existe por un fallo concreto: al corregir el desolapado de los subtitulos automaticos
+ * de YouTube, la ejecucion siguiente seguia mostrando 2339 segmentos y 1386 afirmaciones.
  * El arreglo estaba bien; lo que pasaba es que `transcripcion.json` guardaba el
  * resultado del parser VIEJO y nadie lo invalidaba. La cache de evaluaciones ya tenia
  * esta proteccion via el hash del prompt; a la de transcripcion le faltaba.

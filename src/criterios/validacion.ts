@@ -1,15 +1,10 @@
 /**
- * Maquinaria de validacion compartida por todos los criterios.
+ * Reparacion generica de respuestas de un modelo chico, compartida por todos los criterios.
  *
- * Construir el segundo criterio dejo a la vista que la mitad del validador causal no
- * tenia nada de causal: extraer un JSON de entre prosa, aceptar "si"/"true"/1 como
- * booleano, reescalar un score que vino en 0-100. Eso es reparacion de salidas de un
- * modelo chico, y le pasa a cualquier criterio.
- *
- * Lo que SI es propio de cada criterio —que claves espera, que enums acepta, que
- * coherencias exige— se queda en su carpeta.
+ * Desenvuelve el JSON de entre prosa o markdown, acepta "si"/"no" como booleanos, reescala
+ * un score que vino en 0-100 y normaliza enums. Lo que es propio de cada pregunta (sus
+ * claves, sus enums, sus coherencias) vive en el `esquema.ts` de cada criterio.
  */
-
 /**
  * Extrae el primer objeto JSON balanceado del texto.
  * Necesario porque un modelo de 3B a veces envuelve la respuesta en prosa o en un

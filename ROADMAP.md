@@ -5,7 +5,7 @@ concreto: algo que se pueda medir, no una sensación de que "ya está mejor".
 
 ---
 
-## Estado actual — funcionando y verificado
+## Estado actual (funcionando y verificado)
 
 | Componente | Estado | Cómo se verificó |
 |---|---|---|
@@ -21,7 +21,7 @@ concreto: algo que se pueda medir, no una sensación de que "ya está mejor".
 | Criterio como unidad extensible | ✅ | dos criterios corriendo sobre el mismo pipeline |
 | Motor de inferencia como puerto | ✅ | el bucle se testea sin servidor HTTP |
 | Criterio `apelacion-autoridad` | ✅ | 12 casos de control, reporte verificado |
-| Medición del recall del prefiltro | ✅ herramienta lista | falta correrla sobre material real |
+| Medición del recall del prefiltro | ✅ herramienta lista | falta ejecutarla sobre material real |
 | Ingesta de links con yt-dlp (subtítulos) | ✅ | discurso real de YouTube analizado de punta a punta |
 | Selección de pista en el idioma original | ✅ | 6 tests; nunca baja una traducción automática |
 | Transcripción Whisper local | ⚠️ binarios instalados, **sin ejecutar todavía** | pendiente Fase A, ruta 2 y 3 |
@@ -39,7 +39,7 @@ afirmación, o sea ~18 minutos por discurso. El recorte del prompt (1297 → 502
 
 ---
 
-## Fase A — Desbloquear video
+## Fase A: desbloquear video
 
 Las cinco filas de `verificar.cmd` están en OK y la ruta de subtítulos corrió sobre material real.
 
@@ -49,7 +49,7 @@ Las cinco filas de `verificar.cmd` están en OK y la ruta de subtítulos corrió
 | Audio local corto → Whisper | ⬜ | falta |
 | Link sin subtítulos → audio → Whisper | ⬜ | falta; necesitaba la nightly de yt-dlp por el 403 |
 
-La primera corrida real dejó tres cosas registradas:
+La primera ejecución real dejó tres cosas registradas:
 
 - **El prefiltro es lo que hace viable esto.** 376 afirmaciones en un discurso de ~50 minutos; a
   11,6 s por evaluación, mandarlas todas serían 73 minutos. Cuánto se pierde a cambio es la Fase B.
@@ -61,7 +61,7 @@ La primera corrida real dejó tres cosas registradas:
 
 ---
 
-## Fase B — Saber cuánto se pierde el prefiltro — **HECHO**
+## Fase B: cuánto se pierde el prefiltro (hecha)
 
 Medido sobre un discurso real de ~50 minutos (916 cues → 376 afirmaciones), con el prefiltro
 desactivado y las 376 evaluadas por el modelo:
@@ -95,15 +95,15 @@ responsabilidad. El veredicto de `medir.cmd` ahora lo dice y pide adjudicación 
 mandar a agregar conectores a ciegas.
 
 Las tres afirmaciones quedaron como tests fijos: la primera verifica que el gate ahora la captura,
-las otras dos son el mejor control negativo del repo —texto real donde el prefiltro acierta al no
-gastar un token—.
+las otras dos son el mejor control negativo del repositorio (texto real donde el prefiltro acierta
+al no gastar un token).
 
 **Pendiente:** el delta ASR vs subtítulos publicados, sobre el mismo discurso. Ya está todo listo
 para medirlo: `--subtitulos-asr` fuerza la pista automática del mismo video, así que la única
 variable que cambia es la fuente del texto (no el idioma, ni el orador, ni la duración).
 
-Antes de poder medirlo hubo que arreglar dos bugs que hacían inválida cualquier corrida sobre ASR
-—los subtítulos «rolling» y la caché de transcripción sin versión de parser—. Están en
+Antes de poder medirlo hubo que arreglar dos bugs que hacían inválida cualquier ejecución sobre ASR
+(los subtítulos «rolling» y la caché de transcripción sin versión de parser). Están en
 [Arquitectura](ARQUITECTURA.md#y-lo-que-reveló-medir-la-asr). Estado actual del mismo discurso por
 las dos vías:
 
@@ -131,23 +131,23 @@ ella por pausas del hablante (máx. 240).
 palabras.** Ese es el número que responde la pregunta: la ASR no está destruyendo los conectores
 causales. Si los transcribiera mal, el conteo de la derecha caería, y no cae.
 
-Adjudicando las 7 perdidas de las dos corridas:
+Adjudicando las 7 perdidas de las dos ejecuciónes:
 
-| afirmación | corrida | veredicto |
+| afirmación | ejecución | veredicto |
 |---|---|---|
-| «…targeting that **drove** innovation overseas…» | publicados | hueco del gate — corregido |
-| «**And so** it for 250 years has been subject to…» | ASR | hueco del gate — corregido |
+| «…targeting that **drove** innovation overseas…» | publicados | hueco del gate (corregido |
+| «**And so** it for 250 years has been subject to…» | ASR | hueco del gate) corregido |
 | «…this executive order, which came out **ordering** the agencies…» | ambas | falso positivo del modelo |
 | «But the blockade has been 100% successful.» | ambas | falso positivo del modelo |
 | «Under the Biden administration, the spirit of innovation… was under attack» | ASR | causalidad implícita |
 
-Tres cosas salen de acá:
+Tres cosas salen de aquí:
 
 1. **Ningún conector se perdió por culpa de la ASR.** Los dos huecos reales (`drove`, `and so`)
    estaban igual de ausentes en el texto publicado; la ASR solo los expuso en otra frase. La
    tolerancia fonética en el prefiltro **no tiene evidencia que la justifique** y queda descartada
    hasta que aparezca un caso medido.
-2. **Dos falsos positivos del modelo son estables**, aparecen en las dos corridas con el mismo
+2. **Dos falsos positivos del modelo son estables**, aparecen en las dos ejecuciónes con el mismo
    score. No son ruido: son un límite del modelo de 3B, y el prefiltro los está tapando gratis.
 3. **La causalidad implícita es el límite estructural del enfoque léxico.** «Bajo la administración
    X, Y fue atacado» atribuye causa sin usar una sola palabra causal. No hay conector que agregar:
@@ -156,7 +156,7 @@ Tres cosas salen de acá:
 ### La repetición en español
 
 Primer intento (`vHpcbKTNiG0`): 2202 palabras, 60 afirmaciones, **cero** sobre el umbral. Sin
-denominador no hay recall. Material demasiado corto y poco argumentativo — no es un fallo de la
+denominador no hay recall. Material demasiado corto y poco argumentativo, y no es un fallo de la
 herramienta: el 8% de afirmaciones con conector coincidió con el del discurso en inglés.
 
 Segundo intento (`7SM-6TQM21A`, ASR en español), con material que sí argumenta:
@@ -180,7 +180,7 @@ inglés con «Bajo la administración X, el espíritu de innovación fue atacado
 **Recall adjudicado sobre afirmaciones con marca léxica: 2 de 2.**
 
 Nota al margen que confirma lo anterior: la ASR transcribió «resoluciones vetadas» como «emociones
-vetadas». Es un error real de transcripción — y no tocó ningún conector causal. Tercera evidencia
+vetadas». Es un error real de transcripción, y no tocó ningún conector causal. Tercera evidencia
 independiente de que la tolerancia fonética en el prefiltro apunta al problema equivocado.
 
 ### Las tres mediciones juntas
@@ -191,7 +191,7 @@ independiente de que la tolerancia fonética en el prefiltro apunta al problema 
 | cripto | en | ASR | 498 | 29 (6%) | 7 | 4 | 1 hueco + 2 FP + 1 implícita |
 | ONU | es | ASR | 224 | 12 (5%) | 3 | 1 | 1 implícita |
 
-**Se encontraron exactamente dos huecos reales del gate en tres corridas: `drove` y `and so`.** Los
+**Se encontraron exactamente dos huecos reales del gate en tres ejecuciónes: `drove` y `and so`.** Los
 dos están corregidos y con test fijo. Descontando falsos positivos del modelo y causalidad
 implícita, **el prefiltro no perdió ninguna afirmación con marca léxica causal.**
 
@@ -199,7 +199,7 @@ implícita, **el prefiltro no perdió ninguna afirmación con marca léxica caus
 
 ---
 
-## Fase B2 — Medir el prefiltro del criterio nuevo — **HECHA**
+## Fase B2: prefiltro del criterio de autoridad (hecha)
 
 Mismo discurso de la ONU, criterio `apelacion-autoridad`:
 
@@ -235,47 +235,59 @@ curados el modelo daba 100% en `invoca_autoridad`; sobre 224 oraciones reales ma
 algo no es apoyarse en ella como *fuente*, y el conjunto no tenía una sola oración normativa que
 obligara al modelo a distinguirlo.
 
-Las dos peores entraron al conjunto como `a11` y `a12`. Corrida con ellas dentro (14 casos):
+Las dos peores entraron al conjunto como `a11` y `a12`. Ejecución con ellas dentro (14 casos, 11
+puntuables porque `a12` quedó marcado como difícil):
 
 | | antes (12 casos) | ahora (14 casos) |
 |---|---|---|
-| `invoca_autoridad` | 100% | 92% |
-| `fuente_identificable` | 90% | 92% |
-| `alcance_de_la_evidencia` | 90% | **100%** |
-| score en rango | 100% | 83% |
-| todos los campos | 80% | 75% |
+| `invoca_autoridad` | 100% | 91% |
+| `fuente_identificable` | 90% | 91% |
+| `alcance_de_la_evidencia` | 90% | 91% |
+| score en rango | 100% | 91% |
+| todos los campos | 80% | 73% |
 
-**Y los dos casos nuevos PASARON.** El modelo contestó `invoca_autoridad: false` con score 0.00 en
-las dos propuestas normativas. O sea que sabe distinguir «nombrar una institución como ejecutora» de
-«apoyarse en ella como fuente» — cuando el texto le llega limpio y completo.
+**`a11` pasó: el modelo contestó `invoca_autoridad: false` en la propuesta normativa.** Sabe
+distinguir «nombrar una institución como ejecutora» de «apoyarse en ella como fuente», siempre que el
+texto le llegue limpio y completo.
+
+`a12` es el caso límite y por eso quedó marcado como difícil: es una normativa que además incluye una
+cláusula de saber recibido («la base de la civilización y de la sabiduría de la humanidad»). El
+modelo responde `true`, que es defendible. Se ejecuta y se muestra, pero no puntúa.
+
+La caída respecto del 100% anterior es la corrección esperada: el conjunto de 12 casos no tenía una
+sola oración normativa y por eso nunca ponía a prueba esa distinción.
 
 Eso mueve la hipótesis: los cinco falsos positivos del discurso real **no vienen del juicio del
 modelo, vienen de la entrada.** Las afirmaciones del discurso salieron de una ASR sin puntuación,
 cortadas por pausas cada 240 caracteres, así que varias llegaron como fragmentos o con dos ideas
 pegadas. Es la misma causa que ya habíamos medido en el criterio causal, apareciendo por otro lado.
 
-Hay un error metodológico propio que vale registrar: al pasar las afirmaciones reales al conjunto de
-control las **recorté** para que quedaran cortas, y en `a12` el recorte se llevó justamente la
-cláusula que explicaba la respuesta del modelo («…el derecho internacional, **que es la base de la
-civilización y de la sabiduría de la humanidad condensada en la historia**…»). Esa cláusula sí
-invoca un saber recibido. El caso quedó restaurado verbatim y marcado como difícil: anotar material
-real significa copiarlo tal cual, aunque quede largo, o se está anotando otra cosa.
+Queda registrado además un error de método en la anotación. Al pasar las afirmaciones reales al
+conjunto de control se **recortaron** para que quedaran cortas, y en `a12` el recorte eliminó
+justamente la cláusula que explicaba la respuesta del modelo («…el derecho internacional, **que es
+la base de la civilización y de la sabiduría de la humanidad condensada en la historia**…»). Esa
+cláusula sí invoca un saber recibido. El caso quedó restaurado verbatim y marcado como difícil:
+anotar material real exige copiarlo tal cual, aunque quede largo, o se está anotando otra cosa.
 
-El caso `a03` también cambió de respuesta respecto de la corrida en la otra máquina — más evidencia
+El caso `a03` también cambió de respuesta respecto de la ejecución en la otra máquina, más evidencia
 de que el determinismo no cruza de máquina.
 
-**Criterio de aceptación: cumplido.** El recall crudo de 10% no es el número honesto, el adjudicado
-es 1 hueco real sobre 3 pérdidas atribuibles al gate, pero lo que importa de la fase es lo que
+**Criterio de aceptación: cumplido.** El recall crudo de 10% no es el número honesto (el adjudicado
+es 1 hueco real sobre 3 pérdidas atribuibles al gate) pero lo que importa de la fase es lo que
 destapó: una rama del criterio sin implementar, un límite estructural documentado, un conjunto de
 control demasiado benévolo, y la confirmación de que el corte de la ASR es el cuello de botella real
 de la calidad.
 
 ---
 
-## Fase C — Elegir el modelo con datos, no por intuición — **HECHA**
+## Fase C: elegir el modelo con datos (hecha)
 
-Corrida en una máquina con GPU (Ollama 0.32.15, Node 24, `qwen2.5:3b` a 69 tok/s contra los
+Ejecución en una máquina con GPU (Ollama 0.32.15, Node 24, `qwen2.5:3b` a 69 tok/s contra los
 10,3 tok/s de la máquina de referencia en CPU).
+
+Las tres filas son comparables entre sí porque salieron de la misma máquina y la misma versión del
+prompt. **No lo son con la tabla de la sección siguiente**, que se midió después de una corrección de
+redacción del prompt y en la otra máquina.
 
 | modelo | esquema | determ. | causal | contraste | ventana | score | todos | tok/s | ms/afirm |
 |---|---|---|---|---|---|---|---|---|---|
@@ -289,13 +301,13 @@ Los tres pasan los gates bloqueantes, así que la decisión se juega en la calid
 
 - **`qwen2.5:1.5b` es 2,2× más rápido y pierde 27 puntos.** El desplome está concentrado en
   `tiene_contrafactual_o_comparacion`: 68% de exactitud con F1 de 36% (precisión 40%, sensibilidad
-  33%). Ese campo es la mitad de la pregunta del criterio —una afirmación causal *con* comparación
-  es defendible— así que un modelo que no lo detecta no está haciendo la tarea, está haciendo otra.
+  33%). Ese campo es la mitad de la pregunta del criterio (una afirmación causal *con* comparación
+  es defendible) así que un modelo que no lo detecta no está haciendo la tarea, está haciendo otra.
   Descartado para uso normal; sigue siendo útil con `--modelo` para una pasada exploratoria rápida.
 - **`llama3.2:3b` gana en `tiene_lenguaje_causal_fuerte` (95%, F1 96%)** y empata en score, pero
   sobre-detecta contraste: precisión 50% con sensibilidad 100%, o sea que dice «sí hay comparación»
-  seis veces de más. Eso baja el score de afirmaciones que deberían quedar altas — falsos negativos
-  del producto. Y encima es 34% más lento.
+  seis veces de más. Eso baja el score de afirmaciones que deberían quedar altas (falsos negativos
+  del producto). Y encima es 34% más lento.
 - **`qwen2.5:3b` es el único equilibrado**: 91% y 91% en los dos booleanos, sin sesgo hacia ningún
   lado.
 
@@ -303,25 +315,37 @@ Los tres pasan los gates bloqueantes, así que la decisión se juega en la calid
 
 El mismo `qwen2.5:3b`, mismo prompt, misma temperatura 0, dio **86%** en `ventana_temporal` en la
 máquina de referencia y **82%** en la de GPU. Dos casos cambiaron de respuesta. El gate de
-determinismo sigue en «sí» porque mide repetición **dentro de una corrida**, y ahí es exacto.
+determinismo sigue en «sí» porque mide repetición **dentro de una ejecución**, y ahí es exacto.
 
 No es un bug: distinta versión de Ollama, distinto backend de cómputo, distinto orden de operaciones
 en punto flotante. Pero significa que **una tabla de estas no es comparable con otra si no dice en
 qué máquina se generó**. El comparador ahora imprime versión de Ollama, plataforma y Node arriba de
 la tabla, y lo mismo va en el JSON.
 
-**Criterio de aceptación: cumplido.** La tabla está acá y en el README, y la conclusión fue *no
-cambiar* el modelo — que es un resultado, no una omisión: la elección original queda respaldada por
+### Medición vigente
+
+Última ejecución del conjunto de control, ya con la redacción definitiva de los dos prompts (máquina
+de referencia, CPU, Ollama 0.33.1):
+
+| criterio | esquema | determ. | campo 1 | campo 2 | campo 3 | score | todos | ms/afirm |
+|---|---|---|---|---|---|---|---|---|
+| framing causal (24 casos) | 24/24 | sí | 91% | 91% | 91% | 91% | 77% | 4079 |
+| apelación autoridad (14 casos) | 14/14 | sí | 91% | 91% | 91% | 91% | 73% | 11665 |
+
+Es la tabla que hay que reproducir antes de dar por buena cualquier modificación de los prompts.
+
+**Criterio de aceptación: cumplido.** La tabla comparativa está aquí y en el README, y la conclusión
+fue *no cambiar* el modelo (que es un resultado, no una omisión: la elección original queda respaldada por
 datos en vez de por intuición.
 
 ---
 
-## Fase D — Ampliar el conjunto de control
+## Fase D: ampliar el conjunto de control
 
 **Hecho en su parte estructural.** El conjunto pasó de 10 a 24 casos y ahora cubre los límites que
 faltaban: causalidad negada (`c11`), contrafactual explícito (`c12` y `c18`), cadena causal de tres
-eslabones (`c13`), correlación declarada como correlación (`c14`), los dos casos intermedios —causal con
-ventana pero sin comparación (`c15`) y causal con comparación pero sin plazo (`c16`)—, ventana corta
+eslabones (`c13`), correlación declarada como correlación (`c14`), los dos casos intermedios (causal con
+ventana pero sin comparación en `c15`, y causal con comparación pero sin plazo en `c16`), ventana corta
 *con* comparación (`c19`), y controles negativos en dos idiomas. Se agregaron francés y alemán.
 
 Dos casos (`d01`, `d02`) están marcados como ambiguos a propósito: se ejecutan y se muestran, pero no
@@ -335,11 +359,11 @@ Lo que queda:
 - Anotar afirmaciones **reales** (no sintéticas) y sumarlas a los dos conjuntos.
 - Fijar un umbral mínimo de exactitud por campo que CI pueda verificar cuando haya un Ollama disponible.
 
-**Criterio de aceptación:** un umbral por campo acordado y documentado, con la corrida que lo respalda.
+**Criterio de aceptación:** un umbral por campo acordado y documentado, con la ejecución que lo respalda.
 
 ---
 
-## Fase E — Comparar discursos entre sí
+## Fase E: comparar discursos entre sí
 
 Hoy cada reporte vive solo. El salto de utilidad real está en la comparación:
 
@@ -354,12 +378,12 @@ Es donde la herramienta deja de responder "¿cómo argumentó en este discurso?"
 
 ---
 
-## Fase F — Publicar
+## Fase F: publicar
 
-`.gitignore`, `.gitattributes` y CI ya están. Ver [Publicar en GitHub](README.md#publicar-en-github).
+`.gitignore`, `.gitattributes` y el workflow de CI ya están en el repositorio.
 
-**El proyecto está en condiciones de publicarse.** Lo que queda abierto —la ruta de Whisper local,
-ampliar el conjunto de control, comparar discursos entre sí— es trabajo futuro documentado, no deuda
+**El proyecto está en condiciones de publicarse.** Lo que queda abierto (la ruta de Whisper local,
+ampliar el conjunto de control, comparar discursos entre sí) es trabajo futuro documentado, no deuda
 que bloquee. Un repositorio se publica cuando alguien puede clonarlo y llegar a un resultado
 siguiendo el README, y eso ya funciona en dos máquinas distintas.
 
@@ -375,7 +399,7 @@ Todo lo de abajo salió de correr la herramienta sobre material real, no de supo
 | qué | número | dónde |
 |---|---|---|
 | Ahorro de cómputo del prefiltro | 92-98% | Fase B |
-| Huecos reales del gate causal en 3 corridas | 2 (`drove`, `and so`) | Fase B |
+| Huecos reales del gate causal en 3 ejecuciónes | 2 (`drove`, `and so`) | Fase B |
 | Afirmaciones con marca léxica perdidas, tras corregir | 0 | Fase B |
 | Recorte del prompt causal | 1297 → 502 tokens | optimización |
 | Recorte de la salida | 72 → 21 tokens | optimización |

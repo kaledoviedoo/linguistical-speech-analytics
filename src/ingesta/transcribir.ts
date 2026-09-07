@@ -1,11 +1,8 @@
 /**
- * Transcripcion local con Whisper cuantizado en ONNX, ejecutado DENTRO de Node
- * via Transformers.js. No hay servicio de ASR, ni API, ni upload: el audio nunca
- * sale de la maquina.
+ * Transcripcion local con Whisper (ONNX) via @xenova/transformers.
  *
- * Nota sobre la primera corrida: Transformers.js descarga el modelo ONNX desde
- * HuggingFace una unica vez y lo cachea en .models/. A partir de ahi todo funciona
- * sin red. Con AFC_SOLO_LOCAL=1 se prohibe cualquier descarga (util para auditar).
+ * Corre dentro del proceso de Node, sin servidor ni API: el modelo se descarga una vez a
+ * ./.models/ y de ahi en adelante funciona sin conexion. Devuelve segmentos con timestamps.
  */
 import fs from 'node:fs';
 import { DIR_MODELOS } from '../config.js';

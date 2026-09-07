@@ -110,7 +110,7 @@ export async function generar(
       prompt,
       stream: false,
       format: 'json',
-      // Mantiene el modelo en memoria entre afirmaciones Y entre corridas. Sin esto,
+      // Mantiene el modelo en memoria entre afirmaciones Y entre ejecuciones. Sin esto,
       // cada ejecucion vuelve a pagar la carga del modelo (~40 s en disco lento).
       keep_alive: KEEP_ALIVE,
       options: { ...OPCIONES_OLLAMA },
@@ -119,7 +119,7 @@ export async function generar(
 
   if (!res.ok) {
     const cuerpo = await res.text().catch(() => '');
-    throw new Error(`Ollama respondio HTTP ${res.status}: ${cuerpo.slice(0, 300)}`);
+    throw new Error(explicarFalloOllama(res.status, cuerpo));
   }
 
   const datos = (await res.json()) as {
@@ -149,6 +149,29 @@ export async function generar(
 }
 
 /**
+ * Traduce un fallo del servidor a algo accionable. El caso mas comun que no se explica
+ * solo es una instalacion incompleta: Ollama arranca y responde, pero le falta el binario
+ * que de verdad ejecuta el modelo.
+ */
+function explicarFalloOllama(estado: number, cuerpo: string): string {
+  const s = cuerpo.toLowerCase();
+  if (s.includes('llama-server') || s.includes('binary not found')) {
+    return (
+      'La instalacion de Ollama esta incompleta: falta el binario llama-server.\n' +
+      '  El servidor responde pero no puede ejecutar ningun modelo.\n' +
+      '  Reinstalalo:  winget install --id Ollama.Ollama -e --force'
+    );
+  }
+  if (s.includes('out of memory') || s.includes('insufficient memory')) {
+    return (
+      'Ollama se quedo sin memoria para cargar el modelo.\n' +
+      '  Prueba con uno mas chico:  --modelo qwen2.5:1.5b'
+    );
+  }
+  return `Ollama respondio HTTP ${estado}: ${cuerpo.slice(0, 300)}`;
+}
+
+/**
  * Mensaje de ayuda cuando falta el demonio o el modelo.
  *
  * Distingue tres situaciones distintas, porque la solucion de cada una es otra:
@@ -164,21 +187,21 @@ export async function mensajeAyudaOllama(
     if (!instalado) {
       return (
         `No encuentro Ollama en esta maquina y nada responde en ${url}.\n` +
-        `  1. Instalalo:  ${instruccionesInstalacion('ollama')}\n` +
-        `  2. Cerra y volve a abrir la terminal.\n` +
+        `  1. Instala Ollama:  ${instruccionesInstalacion('ollama')}\n` +
+        `  2. Cierra y vuelve a abrir la terminal.\n` +
         `  3. Descarga el modelo:  ollama pull ${modelo}`
       );
     }
     return (
       `Ollama esta instalado pero no responde en ${url} (${estado.error ?? 'sin respuesta'}).\n` +
-      `  1. Arrancalo:  ollama serve\n` +
+      `  1. Puedes iniciarlo:  ollama serve\n` +
       `     (en Windows suele arrancar solo; busca el icono en la bandeja del sistema)\n` +
       `  2. Descarga el modelo:  ollama pull ${modelo}`
     );
   }
   return (
     `Ollama responde en ${url} pero no tiene el modelo "${modelo}".\n` +
-    `  Descargalo con:  ollama pull ${modelo}\n` +
+    `  Para descargarlo:  ollama pull ${modelo}\n` +
     `  Modelos disponibles ahora: ${estado.modelos.length > 0 ? estado.modelos.join(', ') : '(ninguno)'}`
   );
 }

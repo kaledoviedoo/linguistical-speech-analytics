@@ -1,13 +1,14 @@
 /**
- * Mide cuanto se pierde el prefiltro heuristico.
+ * Mide que se pierde el prefiltro lexico (fase B del roadmap).
  *
- * La idea es mas simple de lo que parece y no necesita dos corridas: si se evalua el
- * discurso ENTERO con el LLM (--sin-prefiltro), cada afirmacion sigue trayendo sus
- * `marcadoresHeuristicos`. Entonces basta mirar las afirmaciones que superaron el
- * umbral y preguntar cuales de ellas NO tenian ningun conector: esas son exactamente
- * las que el prefiltro habria descartado en silencio.
+ *   npm run medir -- <archivo-o-link>
  *
- * Falso negativo del prefiltro = score alto + cero conectores.
+ * Se ejecuta con el prefiltro desactivado, asi que el modelo ve todo el texto. Cada
+ * afirmacion sigue trayendo sus marcadores heuristicos, asi que basta preguntar cuales de
+ * las que superaron el umbral no tenian ningun conector: esas son las que se habrian perdido.
+ *
+ * El numero crudo hay que adjudicarlo a mano. Sin prefiltro el modelo tambien marca
+ * causalidad donde no la hay, y esos falsos positivos no son perdidas del prefiltro.
  */
 import type { Resultados } from '../tipos.js';
 
@@ -39,7 +40,7 @@ export interface InformeRecall {
 }
 
 /**
- * `resultados` tiene que venir de una corrida con --sin-prefiltro: si no, las
+ * `resultados` tiene que venir de una ejecucion con --sin-prefiltro: si no, las
  * afirmaciones sin conector nunca se evaluaron y el recall daria 100% por construccion.
  */
 export function medirRecall(resultados: Resultados, umbral: number): InformeRecall {
@@ -86,7 +87,7 @@ export function veredicto(informe: InformeRecall): { ok: boolean; texto: string 
       ok: false,
       texto:
         'Ninguna afirmacion supero el umbral, asi que no hay recall que medir. ' +
-        'Proba con material mas argumentativo o baja el umbral.',
+        'Prueba con material mas argumentativo o baja el umbral.',
     };
   }
   if (informe.recall >= 0.95) {
@@ -95,7 +96,7 @@ export function veredicto(informe: InformeRecall): { ok: boolean; texto: string 
       texto:
         `El prefiltro captura el ${(informe.recall * 100).toFixed(0)}% de las afirmaciones de score alto ` +
         `y evita mandar al modelo el ${(informe.ahorroComputo * 100).toFixed(0)}% del texto. ` +
-        'La relacion es buena: dejalo como esta.',
+        'La relacion es buena: conviene dejarlo como esta.',
     };
   }
   return {

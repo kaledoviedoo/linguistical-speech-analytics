@@ -1,12 +1,12 @@
 # Arquitectura
 
-Decisiones de diseño del auditor, y decisiones que no se quisieron tomar
+Decisiones de diseño del auditor, y (tan importante como eso) las que se decidieron **no** tomar.
 
 ---
 
 ## El problema que había
 
-El proyecto se llama «auditor de estructura argumental», pero solo sabía auditar una estructura.
+El proyecto se llama «auditor de estructura argumental», pero solo sabía auditar **una** estructura.
 Los cinco campos del análisis de framing causal (`tiene_lenguaje_causal_fuerte`,
 `score_framing_causal`, …) estaban escritos a mano en seis módulos de producción:
 
@@ -33,7 +33,7 @@ debería necesitar un socket.
 
 ### 1. El criterio de auditoría como unidad
 
-Un criterio junta en un solo lugar todo lo específico de una pregunta: el prompt, el esquema de
+Un **criterio** junta en un solo lugar todo lo específico de una pregunta: el prompt, el esquema de
 salida, la validación, el gate léxico del prefiltro y cómo se muestra el resultado.
 
 ```
@@ -47,7 +47,7 @@ src/criterios/
 ```
 
 **El contrato universal es corto a propósito.** El pipeline solo necesita tres cosas de cualquier
-criterio: un score entre 0 y 1, una justificación obligatoria, y unos marcadores para
+criterio: un **score** entre 0 y 1, una **justificación** obligatoria, y unos **marcadores** para
 mostrar. Todo lo demás es privado del criterio.
 
 ```ts
@@ -64,8 +64,8 @@ interface EvaluacionAfirmacion {
 auditable aunque el reporte solo lea las tres primeras claves.
 
 **El `tono` es la pieza que desacopla el reporte.** El reporte ya no sabe qué significa
-«contrafactual»: recibe una etiqueta y un tono, y pinta un chip. `tono` no es un juicio moral — dice
-si ese rasgo suma o resta defensa a la afirmación. Tener lenguaje causal fuerte resta; tener
+«contrafactual»: recibe una etiqueta y un tono, y pinta un chip. `tono` no es un juicio moral: dice
+si ese rasgo **suma o resta defensa** a la afirmación. Tener lenguaje causal fuerte resta; tener
 comparación suma.
 
 Medición antes y después:
@@ -89,7 +89,7 @@ respuestas de un guion, en orden, y registra qué se le pidió.
 
 El pago fue inmediato. El bucle de evaluación ahora se testea **sin ningún proceso externo**: los
 reintentos ante JSON inválido, la recuperación en el segundo intento, un fallo de transporte que no
-tumba la corrida, y el orden preservado con concurrencia 4. Diez tests que antes habrían necesitado un
+tumba la ejecución, y el orden preservado con concurrencia 4. Diez tests que antes habrían necesitado un
 servidor HTTP falso.
 
 `pipeline.ts` y `cli.ts` siguen importando el cliente de Ollama, pero solo para **diagnóstico**
@@ -101,7 +101,7 @@ backend. Lo que ya no ocurre es que el motor de evaluación lo conozca.
 ## Qué reveló el segundo criterio
 
 Una abstracción con una sola implementación es una hipótesis, no un diseño. Construir
-**apelación a autoridad** —una pregunta con otros campos, otro enum y otro rastro léxico— puso a
+**apelación a autoridad** (una pregunta con otros campos, otro enum y otro rastro léxico) puso a
 prueba el contrato. Aguantó, pero dejó cuatro cosas a la vista que solo se ven con dos:
 
 **1. Los reportes se pisaban entre sí.** El hash dependía solo de la entrada, así que analizar el
@@ -131,7 +131,7 @@ que el HTML generado no contenga ningún texto específico de un criterio.
 **4. El arnés de medición era el último reducto causal.** `eval_prompt.ts` conocía los cinco campos
 por su nombre, así que un criterio nuevo era inmedible. Ahora cada caso de control declara qué espera
 por clave, y el arnés compara clave por clave: los booleanos van a una matriz binaria, los enums a una
-de N valores. No hizo falta que el criterio describa sus campos —los declara el conjunto de control,
+de N valores. No hizo falta que el criterio describa sus campos: los declara el conjunto de control,
 que es donde vive el juicio humano.
 
 Lo que **no** hizo falta tocar para que el criterio nuevo funcione de punta a punta: el pipeline, la
@@ -185,7 +185,7 @@ mismo discurso, ASR (antes del arreglo): 2339 cues, ~21000 palabras
 mismo discurso, ASR (después):           1231 cues,  7297 palabras   (+2,9%)
 ```
 
-El parser ya deduplicaba cues **idénticos** consecutivos; acá el solape es parcial y se arrastra
+El parser ya deduplicaba cues **idénticos** consecutivos; aquí el solape es parcial y se arrastra
 varias líneas hacia atrás. El recorte compara contra la **cola del texto ya emitido**, no contra el
 cue vecino: comparando solo con el vecino, la mitad del solape sobrevive. Se activa por archivo, no
 por cue, y solo si más de un tercio de los pares consecutivos se solapan.
@@ -195,11 +195,11 @@ El +2,9% final es transcripción legítima: los subtítulos publicados limpian m
 **2. Contar palabras es el chequeo que faltaba.** Comparar cantidad de afirmaciones no servía para
 detectar la duplicación, porque las dos vías se segmentan con reglas distintas a propósito. El
 conteo de palabras no depende del corte, así que es invariante entre vías y delata cualquier texto
-repetido. Ahora sale en la línea de transcripción de cada corrida.
+repetido. Ahora sale en la línea de transcripción de cada ejecución.
 
-**3. Una caché sin versión miente en silencio.** Con el desolapado ya arreglado, la corrida siguiente
+**3. Una caché sin versión miente en silencio.** Con el desolapado ya arreglado, la ejecución siguiente
 seguía mostrando 2339 segmentos: `transcripcion.json` guardaba la salida del parser viejo y nadie la
-invalidaba. La caché de evaluaciones ya tenía esa protección —su clave incluye el hash del prompt—
+invalidaba. La caché de evaluaciones ya tenía esa protección (su clave incluye el hash del prompt)
 pero la de transcripción no. Ahora lleva `VERSION_PARSEO` y se descarta sola cuando el parser cambia,
 reparseando el archivo local sin volver a descargar nada.
 
@@ -259,10 +259,10 @@ diseñar para un requisito imaginario.
 ## Lo que sigue siendo cierto del diseño original
 
 - **Sin servidor, sin nube, sin claves de API.** El «deploy» es clonar y `npm install`.
-- **Cada etapa persiste su salida** en `./data/<hash>/`, y la siguiente corrida la reutiliza.
+- **Cada etapa persiste su salida** en `./data/<hash>/`, y la siguiente ejecución la reutiliza.
 - **La caché de evaluaciones se invalida sola** cuando cambia el modelo o el prompt del criterio: la
   clave es `sha1(modelo + hashPrompt + texto)`.
-- **El prefiltro es lo que hace viable correr esto en CPU.** Descarta el 60-80% del texto sin gastar
+- **El prefiltro es lo que hace viable ejecutar esto en CPU.** Descarta el 60-80% del texto sin gastar
   un token. Cuánto se pierde a cambio se mide con `npm run medir`.
 - **El sistema audita la estructura del argumento, no verifica el hecho.** Ese límite está en el
   contrato de cada criterio (`alcance`) y visible en cada reporte.

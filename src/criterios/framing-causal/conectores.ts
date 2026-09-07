@@ -1,13 +1,11 @@
 /**
  * Rastro lexico del framing causal, en 6 idiomas.
  *
- * Vive dentro del criterio y no en `procesamiento/`, porque es contenido de ESTA
- * pregunta: otro criterio busca otras palabras. La maquinaria que lo compila es
- * generica y esta en `procesamiento/prefiltro.ts`.
+ * Alimenta el gate del prefiltro: solo las oraciones que traen alguno de estos conectores
+ * viajan al modelo. Vive dentro del criterio porque es contenido de ESTA pregunta; la
+ * maquinaria que lo compila es generica y esta en `procesamiento/prefiltro.ts`.
  *
- * Recall: este filtro descarta el 60-80% del texto sin gastar un token, y a cambio
- * pierde las afirmaciones causales sin conector lexico ("subio el desempleo; ellos
- * estaban en el gobierno"). Cuanto se pierde exactamente se mide con `npm run medir`.
+ * Cuanto se pierde a cambio esta medido en ROADMAP.md (fase B).
  */
 import { compilarGate, familiaAR, lista, type EntradaLexica } from '../../procesamiento/prefiltro.js';
 
@@ -66,18 +64,15 @@ const ENTRADAS: EntradaLexica[] = [
     ['attributable to', 'attributable to'], ['brought on by', 'brought on by'],
     ['as a consequence', 'as a consequence'], ['blamed', 'blamed'], ['to blame for', 'to blame for'],
     ['created by', 'created by'], ['driven by', 'driven by'],
-    // Hallados midiendo el recall sobre un discurso real (Fase B). El gate tenia
-    // "drove up" y "drove down" pero no "drove" a secas, que es como aparece en
-    // "drove innovation overseas" y "wanted to drive it out".
+    // "drove" a secas: el gate solo tenia "drove up" y "drove down".
     ['drove', 'drove'], ['drive out', 'drive out'], ['drives', 'drives'], ['driving', 'driving'],
-    // Misma familia semantica —verbos de forzar o empujar un efecto— agregados por
-    // analogia con el anterior, no por haber aparecido en la medicion.
+    // Misma familia semantica (verbos de forzar o empujar un efecto), agregados por
+    // analogia con el anterior y no por haber aparecido en la medicion.
     ['spurred', 'spurred'], ['pushed', 'pushed'], ['forced', 'forced'],
     ['paved the way', 'paved the way'], ['contributed to', 'contributed to'],
     ['gave way to', 'gave way to'], ['set in motion', 'set in motion'],
-    // Hallado en la medicion sobre la pista ASR del mismo discurso: "And so it for 250
-    // years has been subject to...". El gate tenia "therefore" y "consequently" pero no
-    // la forma hablada. Va como bigrama: "so" a secas dispararia con medio discurso.
+    // La forma hablada de "therefore". Va como bigrama porque "so" a secas dispararia
+    // con medio discurso.
     ['and so', 'and so'],
   ]),
 

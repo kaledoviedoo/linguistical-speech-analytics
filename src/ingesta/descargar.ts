@@ -1,18 +1,19 @@
 /**
- * Ingesta de links (YouTube y URLs directas de audio/video) con yt-dlp como
- * subproceso local. No hay servicio intermediario: yt-dlp corre en la maquina
- * del usuario y deja el archivo en ./data/<hash>/.
+ * Ingesta de links con yt-dlp como subproceso local.
+ *
+ * Dos caminos: bajar la mejor pista de audio, o bajar los subtitulos y saltarse Whisper.
+ * Antes de bajar nada consulta el link con `yt-dlp -J` y elige UNA pista de subtitulos,
+ * solo si esta en el idioma original (`elegirPistaOriginal`).
+ *
+ * No hay servicio intermediario: yt-dlp corre en la maquina del usuario y deja el archivo
+ * en ./data/<hash>/.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { ejecutar, errorBinarioFaltante, existeBinario } from '../utilidades/proceso.js';
 import { log } from '../utilidades/log.js';
 
-/**
- * Una descarga interrumpida deja `fuente.webm.part`, que empieza igual que el archivo bueno
- * y puede pasar del kilobyte. Sin esta exclusion, la corrida siguiente lo tomaria por
- * completo y le daria a ffmpeg un archivo truncado.
- */
+/** Restos de una descarga interrumpida: empiezan igual que el archivo bueno y enganan. */
 const RESTOS_DE_DESCARGA = /\.(part|ytdl|temp|tmp|download)$/i;
 
 function buscarPorPrefijo(dir: string, prefijo: string): string | null {
@@ -44,11 +45,7 @@ function argumentosCookies(navegador: string | null): string[] {
   return navegador ? ['--cookies-from-browser', navegador] : [];
 }
 
-/**
- * YouTube devuelve 403 cuando el descifrado de la firma que trae yt-dlp quedo viejo.
- * Es el fallo mas comun y el mas facil de confundir con "el video no existe": actualizar
- * yt-dlp lo resuelve casi siempre.
- */
+/** El 403 casi siempre significa yt-dlp desactualizado, no video inexistente. */
 const AVISO_403 =
   'yt-dlp esta desactualizado para el YouTube de hoy (HTTP 403).\n' +
   '  Actualizalo:  winget upgrade --id yt-dlp.yt-dlp -e     (o:  yt-dlp -U)';
@@ -60,9 +57,9 @@ function explicarFalloYtDlp(salida: string, codigo: number, cookies: string | nu
   if (s.includes('sign in to confirm') || s.includes('not a bot') || s.includes('cookies')) {
     return cookies
       ? `YouTube sigue pidiendo sesion aunque use las cookies de ${cookies}.\n` +
-          `  Abri ese navegador, inicia sesion en youtube.com y volve a intentar.`
+          `  Abre ese navegador, inicia sesion en youtube.com y vuelve a intentar.`
       : `YouTube esta pidiendo una sesion iniciada para este video.\n` +
-          `  Volve a intentar agregando:  --cookies chrome   (o edge, firefox, brave)`;
+          `  Vuelve a intentar agregando:  --cookies chrome   (o edge, firefox, brave)`;
   }
   if (s.includes('video unavailable') || s.includes('private video')) {
     return 'El video no esta disponible publicamente (privado, borrado o restringido por region).';
@@ -132,27 +129,19 @@ export interface PistaElegida {
 const raiz = (lang: string): string => (lang.split('-')[0] ?? lang).toLowerCase();
 
 /**
- * Elige UNA pista, y solo si esta en el idioma original.
+ * Elige UNA pista de subtitulos, y solo si esta en el idioma original.
  *
- * `automatic_captions` mezcla dos cosas muy distintas bajo el mismo nombre: la
- * transcripcion automatica del audio original (`en-orig`, o el idioma del video) y su
- * traduccion automatica a todos los idiomas (`es`, `fr`, `pt`...). Pedir `es` para un
- * discurso en ingles no trae subtitulos: trae una traduccion hecha por YouTube.
- *
- * Eso rompe el analisis por dos motivos. Uno tecnico: el prefiltro busca conectores
- * causales, y una traduccion automatica reescribe justamente esas construcciones. Uno de
- * diseno: la traduccion automatica esta fuera de alcance de forma permanente en este
- * proyecto — el analisis es estructural y se hace en el idioma en que se hablo.
- *
- * Por eso, si lo unico disponible es una traduccion, esta funcion devuelve null y el
- * pipeline transcribe el audio localmente, que si respeta el original.
+ * `automatic_captions` mezcla la transcripcion del audio original (`en-orig`) con su
+ * traduccion automatica a ~200 idiomas. Pedir `es` para un discurso en ingles no trae
+ * subtitulos, trae una traduccion, y el prefiltro busca conectores causales que una
+ * traduccion reescribe. Si lo unico disponible es una traduccion devuelve null y el
+ * pipeline transcribe el audio, que si respeta el original.
  */
 export function elegirPistaOriginal(pistas: PistasDelLink, forzarASR = false): PistaElegida | null {
   const idioma = pistas.idioma ? raiz(pistas.idioma) : null;
 
-  // --subtitulos-asr salta los publicados a proposito: sirve para medir CUANTO cuesta
-  // la ASR sobre el mismo video del que si hay una version limpia. Sin esta opcion, la
-  // comparacion "publicados vs ASR" mezclaria dos discursos y dos idiomas distintos.
+  // --subtitulos-asr salta los publicados a proposito, para poder medir cuanto cuesta la
+  // ASR sobre el mismo video del que si hay una version limpia.
   const publicado = forzarASR
     ? undefined
     : idioma
@@ -212,10 +201,8 @@ export interface SubtitulosDescargados {
 }
 
 /**
- * Opcional (--preferir-subtitulos): si el video ya trae subtitulos EN SU IDIOMA ORIGINAL,
- * se descargan en vez del audio y se salta Whisper por completo. En un discurso de 40
- * minutos esto es la diferencia entre segundos y varios minutos de CPU.
- * Devuelve null si no hay ninguna pista original utilizable.
+ * --preferir-subtitulos: si el video trae subtitulos en su idioma original se descargan en
+ * vez del audio y se salta Whisper. Devuelve null si no hay pista original utilizable.
  */
 export async function descargarSubtitulos(
   url: string,
@@ -254,8 +241,7 @@ export async function descargarSubtitulos(
 
   const ruta = buscarPorPrefijo(dirTrabajo, 'subs.');
   if (!ruta) {
-    // A nivel aviso y no detalle: caer a transcribir el audio cuesta minutos de CPU,
-    // asi que el motivo tiene que verse sin volver a correr con --verboso.
+    // Aviso y no detalle: caer a transcribir cuesta minutos, el motivo tiene que verse.
     log.aviso(`Sin subtitulos utilizables: ${motivoSinSubtitulos(r.stderr || r.stdout, r.codigo)}`);
     return null;
   }
@@ -267,10 +253,10 @@ function motivoSinSubtitulos(salida: string, codigo: number): string {
   const s = salida.toLowerCase();
   if (s.includes('403') || s.includes('forbidden')) return AVISO_403;
   if (s.includes('sign in to confirm') || s.includes('not a bot')) {
-    return 'YouTube pide sesion iniciada. Volve a intentar con:  --cookies edge';
+    return 'YouTube pide sesion iniciada. Vuelve a intentar con:  --cookies edge';
   }
   if (s.includes('429') || s.includes('too many requests')) {
-    return 'YouTube esta limitando las peticiones (HTTP 429). Espera unos minutos y volve a intentar.';
+    return 'YouTube esta limitando las peticiones (HTTP 429). Espera unos minutos y vuelve a intentar.';
   }
   if (s.includes('no subtitles')) return 'el video no publica subtitulos en su idioma original.';
   const primerError = salida

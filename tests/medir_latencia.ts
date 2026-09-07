@@ -1,21 +1,12 @@
 /**
- * De donde salen los segundos.
- *
- * Cada evaluacion tarda ~11,6 s en CPU y no sirve de nada optimizar a ciegas: el tiempo
- * de una llamada a Ollama tiene tres partes muy distintas, y cada una se ataca con una
- * palanca distinta.
- *
- *   carga        el modelo entrando a RAM/VRAM. Se paga una vez si keep_alive aguanta.
- *   prompt_eval  procesar el prompt de ENTRADA. Se ataca acortando el prompt de sistema,
- *                pero solo importa si Ollama NO esta reutilizando el prefijo cacheado.
- *   eval         generar los tokens de SALIDA. Se ataca pidiendo menos texto.
- *
- * Este medidor hace tres llamadas reales con el prompt de sistema del criterio y reporta
- * el reparto. La segunda y la tercera dicen si el prefijo se reutiliza: si prompt_eval_count
- * sigue siendo del tamano del prompt de sistema, se esta re-evaluando todo en cada llamada.
+ * De donde salen los segundos de cada llamada al modelo.
  *
  *   npm run latencia
  *   npm run latencia -- --criterio apelacion-autoridad --modelo qwen2.5:1.5b
+ *
+ * Hace tres llamadas reales y reparte el tiempo en tres partes (cargar el modelo, procesar
+ * el prompt de entrada, generar la salida), porque cada una se ataca con una palanca
+ * distinta. Las llamadas 2 y 3 dicen ademas si Ollama reutiliza el prefijo del prompt.
  */
 import { MODELO_LLM, URL_OLLAMA, OPCIONES_OLLAMA } from '../src/config.js';
 import { obtenerCriterio } from '../src/criterios/registro.js';
@@ -139,5 +130,5 @@ if (mGen > mTotal * 0.5) {
 
 console.log(
   `\nHoy, 376 afirmaciones = ${((mTotal * 376) / 60000).toFixed(0)} minutos.` +
-    '  Corre "npm run benchmark" para saber si el modelo esta en GPU o en CPU.\n',
+    '  Ejecuta "npm run benchmark" para saber si el modelo esta en GPU o en CPU.\n',
 );

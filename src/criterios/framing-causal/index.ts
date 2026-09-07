@@ -1,14 +1,11 @@
 /**
  * Criterio de auditoria: FRAMING CAUSAL.
  *
- * Detecta afirmaciones que usan lenguaje causal fuerte sin los marcadores que hacen
- * defendible una afirmacion causal: comparacion, contrafactual o ventana temporal
- * razonable.
+ * Detecta afirmaciones con lenguaje causal fuerte que no traen los marcadores que las
+ * harian defendibles: comparacion, contrafactual o ventana temporal razonable.
  *
- * Este archivo es el unico lugar donde conviven las cinco piezas especificas de esta
- * pregunta: el prompt, el esquema, la validacion, el gate lexico y como se muestra.
- * Un segundo criterio se agrega escribiendo un archivo como este, sin tocar el
- * pipeline, ni la cache, ni el reporte.
+ * Reune las cinco piezas del criterio (prompt, esquema, validacion, gate lexico y
+ * presentacion). Agregar otro criterio es escribir un archivo como este.
  */
 import type { Criterio, MarcadorMostrable, ResultadoValidacion } from '../tipos.js';
 import { GATE_CAUSAL, marcadoresCausales } from './conectores.js';

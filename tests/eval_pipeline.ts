@@ -1,10 +1,10 @@
 /**
- * Tests offline del pipeline: NO necesitan Ollama ni red.
+ * Tests offline del pipeline. No necesitan Ollama ni red.
  *
  *   npm run test:pipeline
  *
- * Cubren las partes deterministas (parseo, segmentacion, prefiltro, validacion del
- * esquema y generacion del HTML) usando una evaluacion simulada en lugar del LLM.
+ * Cubren parseo, segmentacion, prefiltro, validacion de esquemas, cache, metricas, el
+ * bucle de evaluacion (con un motor de guion) y la generacion del reporte.
  */
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -134,11 +134,8 @@ comprobar(
   marcadoresCausales('la causalidad y el causante son conceptos distintos').join(','),
 );
 const preseleccionadas = afirmaciones.filter((a) => a.preseleccionada).length;
-// --- Casos reales del primer discurso medido (Fase B) ---
-// La medicion de recall dio 3 afirmaciones "perdidas". Adjudicadas a mano, solo UNA
-// era un hueco del gate; las otras dos no tienen ningun lenguaje causal y el modelo
-// las marco igual. Eso las vuelve el mejor control negativo que tenemos: son texto
-// real donde el prefiltro acierta al no gastar un token.
+// Casos reales de los discursos medidos. Los negativos son los mas valiosos: texto real
+// donde el modelo marca causalidad y el prefiltro acierta al no gastar un token.
 comprobar(
   'Prefiltro (caso real): captura "drove innovation overseas"',
   marcadoresCausales(
@@ -160,9 +157,8 @@ comprobar(
   marcadoresCausales('But the blockade has been 100 percent successful.').length === 0,
 );
 comprobar(
-  // Caso real del discurso en espanol. Es causalidad por YUXTAPOSICION: "cada dia X,
-  // cada dia mas Y" atribuye causa sin una sola palabra causal. El prefiltro no puede
-  // capturarla por construccion, y agregar conectores no ayudaria: no hay ninguno.
+  // Causalidad por yuxtaposicion: atribuye causa sin una sola palabra causal, asi que
+  // ningun conector la capturaria.
   'Prefiltro (caso real, es): la causalidad implicita no deja rastro lexico',
   marcadoresCausales(
     'Cada dia de resoluciones vetadas en el Consejo de Seguridad de la ONU, cada dia que pasa son mas los ninos bombardeados.',
@@ -259,7 +255,7 @@ comprobar('Esquema: rechaza enum invalido', !validarEvaluacion({ ...valido, vent
 comprobar(
   'Esquema: extrae JSON envuelto en markdown y prosa',
   (() => {
-    const crudo = 'Claro, aca va:\n```json\n' + JSON.stringify(valido) + '\n```\nEspero que sirva.';
+    const crudo = 'Claro, aqui va:\n```json\n' + JSON.stringify(valido) + '\n```\nEspero que sirva.';
     return parsearRespuesta(crudo).ok;
   })(),
 );
@@ -313,9 +309,8 @@ comprobar(
 );
 comprobar(
   'Pistas: --subtitulos-asr salta los publicados y toma la ASR del original',
-  // Sin esta opcion no hay experimento valido: comparar el discurso en ingles con
-  // subtitulos publicados contra el discurso en espanol con ASR mezcla el efecto de la
-  // ASR con el del idioma y el del orador. Forzando la pista se compara el MISMO video.
+  // Forzar la pista permite comparar el MISMO video por las dos vias, sin mezclar el
+  // efecto de la ASR con el del idioma o el del orador.
   elegirPistaOriginal(linkReal, true)?.lang === 'en-orig' &&
     elegirPistaOriginal(linkReal, true)?.auto === true,
   JSON.stringify(elegirPistaOriginal(linkReal, true)),
@@ -330,9 +325,8 @@ comprobar(
 );
 
 // ------------------------------------ subtitulos "rolling" de YouTube (ASR)
-// Caso real, encontrado midiendo: la ASR entrega la pantalla completa en cada cue y
-// arrastra las lineas anteriores. El mismo discurso dio 916 cues por subtitulos
-// publicados y 2339 por ASR, con cada frase repetida dos o tres veces.
+// La ASR entrega la pantalla completa en cada cue y arrastra las lineas anteriores, asi
+// que cada frase aparece dos o tres veces si se concatena tal cual.
 const rolling = parsearArchivoTexto('tests/fixtures/asr-rolling-en.vtt');
 const textoRolling = rolling.segmentos.map((x) => x.texto).join(' ');
 comprobar(
@@ -362,9 +356,7 @@ comprobar(
 );
 
 // ------------------------------------------- segmentacion sin puntuacion (ASR)
-// Caso real: un discurso en espanol tomado de la ASR de YouTube. 732 cues sin un solo
-// punto daban 87 bloques de 420 caracteres y el modelo marcaba CERO afirmaciones: cada
-// "afirmacion" eran varias pegadas. Sin puntos, la unica senal de limite es la pausa.
+// Sin puntos no hay oraciones que cortar, y la unica senal de limite que queda es la pausa.
 const cuesSinPuntuacion: SegmentoTranscripcion[] = [
   { inicio: 0.0, fin: 2.0, texto: 'la reforma del ano pasado provoco la caida del empleo industrial' },
   { inicio: 3.2, fin: 5.0, texto: 'nadie discute eso porque los numeros estan a la vista' },
@@ -451,7 +443,7 @@ comprobar('Cache: persiste a disco', fs.existsSync(rutaCache));
 
 const c2 = new CacheEvaluaciones(rutaCache, 'qwen2.5:3b', HASH_PROMPT, true);
 comprobar(
-  'Cache: una corrida nueva reutiliza la evaluacion',
+  'Cache: una ejecucion nueva reutiliza la evaluacion',
   c2.obtener('una frase')?.score === 0.85 && c2.aciertos === 1,
 );
 comprobar('Cache: no confunde textos distintos', c2.obtener('otra frase') === null);
@@ -613,17 +605,15 @@ comprobar(
     criterioApelacionAutoridad.marcadoresLexicos('eso provoco la crisis').length === 0,
 );
 comprobar(
-  // Caso real del discurso en espanol: el gate tenia "todos sabemos" pero no la forma
-  // en que un orador se dirige al auditorio, que es la mas frecuente en un discurso.
+  // El gate tenia "todos sabemos" pero no la forma en que un orador se dirige al auditorio.
   'Autoridad (caso real): captura "saben que" como apelacion al saber comun',
   criterioApelacionAutoridad
     .marcadoresLexicos('Saben que unir la energia limpia de America Latina y Africa a las economias del norte.')
     .includes('saben que'),
 );
 comprobar(
-  // La otra mitad del hallazgo: una cifra sin fuente ("100 GB de capacidad") es una
-  // apelacion a datos no verificables, pero no deja ningun rastro lexico. Es el limite
-  // estructural del gate, igual que la causalidad implicita en el criterio causal.
+  // Una cifra sin fuente es una apelacion a datos no verificables, pero no deja rastro
+  // lexico: es el limite estructural del gate.
   'Autoridad (caso real): una cifra sin fuente no deja rastro lexico',
   criterioApelacionAutoridad.marcadoresLexicos(
     'America Latina tiene potencialmente 100 GB de capacidad anual de energia electrica limpia.',
@@ -682,9 +672,8 @@ comprobar(
   !validarAutoridad({ ...evalAutoridadValida, justificacion: '' }).ok,
 );
 comprobar(
-  // El recorte que funciono en el criterio causal se midio aca y empeoro: invoca_autoridad
-  // cayo de 100% a 80% y el score en rango de 100% a 70%. Este test deja constancia de que
-  // volver a las claves largas fue una decision medida, no un descuido.
+  // Acortar estas claves se midio y empeoro el criterio (ver ROADMAP.md), asi que las
+  // claves largas son una decision, no un descuido.
   'Autoridad: conserva las claves largas del prompt original (medido: acortarlas empeora)',
   PROMPT_AUTORIDAD.includes('"invoca_autoridad"') &&
     PROMPT_AUTORIDAD.includes('"fuente_identificable"') &&
@@ -750,7 +739,7 @@ const corridaError = await evaluarAfirmaciones(afirmacionesDemo.slice(0, 3), opc
   criterio: criterioFramingCausal, motor: motorQueExplota, cache: null,
 });
 comprobar(
-  'Motor: un fallo de transporte no tumba la corrida',
+  'Motor: un fallo de transporte no tumba la ejecucion',
   corridaError.resultados.length === 3 && corridaError.resultados.some((r) => r.error?.includes('conexion rechazada')),
 );
 

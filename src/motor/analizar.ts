@@ -1,15 +1,8 @@
 /**
- * Bucle de evaluacion.
+ * Bucle de evaluacion: manda al modelo las afirmaciones preseleccionadas y valida lo que vuelve.
  *
- * Este modulo ya no sabe QUE se audita ni CON QUE se infiere. Recibe un criterio
- * (que aporta prompt, esquema y validacion) y un motor de inferencia (que convierte
- * prompt en texto). Lo que si sabe es lo que de verdad le corresponde: reintentos,
- * cache, concurrencia y contabilidad de rendimiento.
- *
- * Secuencial por defecto. Con poca VRAM, varias generaciones en paralelo obligan a
- * Ollama a swapear KV-cache. En CPU el efecto es peor todavia: cada slot paralelo
- * mantiene su propio cache de prefijo, asi que cada uno vuelve a pagar la evaluacion
- * del prompt de sistema entero.
+ * Maneja concurrencia, reintentos ante JSON invalido, cache y metricas de rendimiento.
+ * No conoce ningun criterio ni ningun backend: recibe el criterio y el motor por parametro.
  */
 import type { Afirmacion, OpcionesCorrida, ResultadoAfirmacion } from '../tipos.js';
 import { empaquetar, type Criterio } from '../criterios/tipos.js';
@@ -24,7 +17,7 @@ export interface ProgresoEvaluacion {
   desdeCache: number;
 }
 
-/** Metricas agregadas de la corrida, para saber si el cuello de botella es GPU, CPU o disco. */
+/** Metricas agregadas de la ejecucion, para saber si el cuello de botella es GPU, CPU o disco. */
 export interface MetricasLLM {
   msCargaModelo: number;
   tokensGenerados: number;

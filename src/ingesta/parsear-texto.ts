@@ -1,6 +1,11 @@
 /**
- * Parseo directo de transcripciones ya existentes: .srt, .vtt y texto plano.
- * Si el archivo trae timestamps, se salta por completo el paso de transcripcion.
+ * Parseo de transcripciones ya existentes: .srt, .vtt y texto plano.
+ *
+ * Los tres terminan en la misma lista de segmentos con inicio, fin y texto. El texto plano
+ * sin timestamps recibe tiempos estimados y se marca con `timestampsReales: false`.
+ *
+ * Incluye el desolapado de subtitulos "rolling" de YouTube, que arrastran las lineas
+ * anteriores en cada cue y triplican el texto si se concatenan tal cual.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -34,26 +39,11 @@ function limpiarLinea(linea: string): string {
 const RE_TIEMPOS = /(\d{1,2}:)?\d{1,2}:\d{2}[.,]\d{1,3}\s*-->\s*(\d{1,2}:)?\d{1,2}:\d{2}[.,]\d{1,3}/;
 
 /**
- * SUBTITULOS "ROLLING" DE YOUTUBE (encontrado midiendo, costo 40 minutos de CPU)
- *
- * La transcripcion automatica de YouTube no entrega cues independientes: entrega la
- * pantalla completa en cada cue, arrastrando las lineas anteriores.
- *
- *   cue 1: "On day one, we fired Joe Biden's rogue"
- *   cue 2: "On day one, we fired Joe Biden's rogue SEC Chair Gary"
- *   cue 3: "we fired Joe Biden's rogue SEC Chair Gary Gensler."
- *
- * Concatenados sin mas, cada frase aparece dos o tres veces. El mismo discurso dio 916
- * cues por subtitulos publicados y 2339 por ASR, y 1386 afirmaciones contra 376. El
- * modelo evaluo el texto triplicado durante 40 minutos.
- *
- * La deduplicacion que ya habia solo cubria cues IDENTICOS consecutivos. Aca el solape
- * es parcial, asi que hay que recortar de cada cue el prefijo que repite el final del
- * anterior, comparando palabra por palabra sin puntuacion ni mayusculas.
+ * Los cues de YouTube se solapan entre si (cada uno repite el final del anterior), asi que
+ * el recorte compara palabra por palabra, sin puntuacion ni mayusculas.
  */
 function normalizarPalabra(p: string): string {
-  // Tambien se cae el apostrofo: la ASR escribe "Bidens" donde el subtitulo publicado
-  // pone "Biden's", y sin esto el solape entre ambos no se detecta.
+  // El apostrofo tambien se cae: la ASR escribe "Bidens" donde el publicado pone "Biden's".
   return p.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
 }
 
@@ -79,9 +69,8 @@ export function largoDelSolape(anterior: string, actual: string): number {
 }
 
 /**
- * True si el archivo esta hecho de cues que se solapan entre si. Se decide una vez sobre
- * el archivo entero y no cue por cue: un subtitulo publicado puede tener un solape
- * suelto por una repeticion real del orador, pero no en un tercio de los pares.
+ * True si el archivo entero esta hecho de cues solapados. Se decide sobre el archivo y no
+ * cue por cue: un subtitulo publicado puede traer un solape suelto, pero no en un tercio.
  */
 export function pareceRolling(segmentos: SegmentoTranscripcion[]): boolean {
   let pares = 0;
@@ -97,12 +86,8 @@ export function pareceRolling(segmentos: SegmentoTranscripcion[]): boolean {
 }
 
 /**
- * Recorta de cada cue el prefijo que ya se emitio.
- *
- * La comparacion NO se hace contra el cue anterior sino contra la COLA del texto ya
- * emitido: la ventana de YouTube arrastra varias lineas, asi que el cue 3 repite algo
- * que venia del cue 1 y que del cue 2 ya se recorto. Comparando solo con el vecino
- * inmediato, la mitad del solape sobrevive.
+ * Recorta de cada cue el prefijo ya emitido. Compara contra la COLA del texto acumulado y
+ * no contra el cue vecino: la ventana arrastra varias lineas hacia atras.
  */
 const MAX_COLA = 60;
 

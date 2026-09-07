@@ -2,9 +2,8 @@
  * Orquestador del pipeline completo:
  *   ingesta -> transcripcion -> segmentacion -> prefiltro -> LLM local -> reporte.
  *
- * Cada etapa persiste su salida en ./data/<hash>/ y se reutiliza en la siguiente
- * corrida salvo que se pase --forzar. Asi, cambiar el prompt o el umbral no obliga
- * a volver a transcribir 40 minutos de audio.
+ * Cada etapa persiste su salida en ./data/<hash>/ y la siguiente ejecucion la reutiliza,
+ * asi que cambiar el prompt o el umbral no obliga a volver a transcribir 40 minutos.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -157,9 +156,8 @@ async function obtenerTranscripcion(
   };
 
   escribirJSON(rutaCache, transcripcion);
-  // El conteo de palabras es la forma barata de detectar texto duplicado: el mismo
-  // discurso por dos vias distintas tiene que dar practicamente las mismas palabras.
-  // Cuando la ASR llegaba solapada, daba el triple que los subtitulos publicados.
+  // El conteo de palabras delata texto duplicado: el mismo discurso por dos vias
+  // distintas tiene que dar practicamente las mismas palabras.
   const palabras = textoCompleto.split(/\s+/).filter(Boolean).length;
   log.ok(
     `Transcripcion lista: ${segmentos.length} segmentos, ${palabras.toLocaleString('es')} palabras, ` +
@@ -223,8 +221,8 @@ export async function ejecutarPipeline(opciones: OpcionesPipeline): Promise<Sali
   const criterio = obtenerCriterio(opciones.criterio);
   const motor = motorOllama(opciones.urlOllama, opciones.modelo);
   const tipo = detectarTipoEntrada(opciones.entrada);
-  // La pista forzada es parte de la entrada: analizar el MISMO video por subtitulos
-  // publicados y por ASR son dos corridas distintas y no deben pisarse los datos.
+  // La pista forzada es parte de la entrada: el mismo video por subtitulos publicados y
+  // por ASR son dos ejecuciones distintas y no deben pisarse los datos.
   const hash = hashDeEntrada(
     opciones.subtitulosASR ? `${opciones.entrada}#asr` : opciones.entrada,
     tipo !== 'url',
@@ -282,7 +280,7 @@ export async function ejecutarPipeline(opciones: OpcionesPipeline): Promise<Sali
     );
   }
   if (aEvaluar === 0) {
-    log.aviso('Ninguna afirmacion supero el prefiltro. Proba con --sin-prefiltro para mandarlas todas.');
+    log.aviso('Ninguna afirmacion supero el prefiltro. Prueba con --sin-prefiltro para mandarlas todas.');
   }
 
   // --- Motor de deteccion

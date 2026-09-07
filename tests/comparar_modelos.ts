@@ -1,17 +1,16 @@
 /**
- * Fase C: elegir el modelo con datos, no por intuicion.
+ * Comparador de modelos (fase C del roadmap).
  *
- * Corre el conjunto de control completo contra varios modelos, uno por uno, y arma la
- * tabla comparativa. Es un solo comando porque la fase se ejecuta en otra maquina —una
- * con GPU— y quien la corra no tiene por que conocer el arnes por dentro.
+ * Ejecuta el conjunto de control completo contra varios modelos, uno por uno, y arma la
+ * tabla comparativa. Cada ejecucion deja su JSON crudo en medidas-<modelo>.json, asi que
+ * la tabla se puede rehacer sin volver a pagar el computo.
  *
  *   npm run comparar
- *   npm run comparar -- --modelos qwen2.5:3b,qwen2.5:1.5b,llama3.2:3b
+ *   npm run comparar -- --modelos qwen2.5:3b,qwen2.5:1.5b
  *   npm run comparar -- --criterio apelacion-autoridad
  *
- * Cada corrida deja su JSON crudo en medidas-<modelo>.json, asi que la tabla se puede
- * rehacer sin volver a pagar el computo. Los dos primeros renglones son BLOQUEANTES: un
- * modelo que no respeta el esquema o que no es reproducible no compite, por rapido que sea.
+ * Los dos primeros renglones de la tabla son bloqueantes: un modelo que no respeta el
+ * esquema o que no es reproducible no compite, por rapido que sea.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -56,13 +55,13 @@ async function main(): Promise<number> {
 
   const estado = await estadoOllama(URL);
   if (!estado.disponible) {
-    console.log(rojo(`Ollama no responde en ${URL}. Arrancalo con:  ollama serve`));
+    console.log(rojo(`Ollama no responde en ${URL}. Para iniciarlo:  ollama serve`));
     return 1;
   }
 
   const faltantes = MODELOS.filter((m) => !tieneModelo(estado.modelos, m));
   if (faltantes.length > 0) {
-    console.log(rojo('Faltan modelos. Descargalos primero:\n'));
+    console.log(rojo('Faltan modelos. Es necesario descargarlos primero:\n'));
     for (const m of faltantes) console.log(`  ollama pull ${m}`);
     console.log(gris(`\nInstalados ahora mismo: ${estado.modelos.join(', ') || '(ninguno)'}`));
     return 1;
@@ -85,14 +84,14 @@ async function main(): Promise<number> {
       { onLinea: (l) => console.log(gris(`    ${l}`)) },
     );
     if (!fs.existsSync(archivo)) {
-      console.log(rojo(`  ${modelo}: la corrida no dejo medidas (codigo ${r.codigo}). Se omite.`));
+      console.log(rojo(`  ${modelo}: la ejecucion no dejo medidas (codigo ${r.codigo}). Se omite.`));
       continue;
     }
     resultados.push(JSON.parse(fs.readFileSync(archivo, 'utf8')) as Medidas);
   }
 
   if (resultados.length === 0) {
-    console.log(rojo('\nNinguna corrida produjo medidas.'));
+    console.log(rojo('\nNinguna ejecucion produjo medidas.'));
     return 1;
   }
 
@@ -102,10 +101,8 @@ async function main(): Promise<number> {
     (k) => k !== 'score' && k !== 'todosLosCampos',
   );
 
-  // La tabla SIN esta linea no se puede comparar con otra corrida. Medido: el mismo
-  // modelo a temperatura 0 dio 86% de exactitud en ventana_temporal en una maquina y
-  // 82% en otra, con distinta version de Ollama y GPU en vez de CPU. El determinismo
-  // vale dentro de una maquina, no entre maquinas.
+  // Sin esta linea la tabla no se puede comparar con otra: el determinismo vale dentro de
+  // una maquina, no entre maquinas (mismo modelo y temperatura 0 dieron 86% y 82%).
   console.log(negrita('\n\nTABLA COMPARATIVA'));
   console.log(
     gris(`  Ollama ${estado.version ?? '?'} · ${process.platform}-${process.arch} · Node ${process.version}\n`),
@@ -163,7 +160,7 @@ async function main(): Promise<number> {
   console.log(`  Mas rapido:  ${verde(rapido.modelo)}  (${rapido.msPorAfirmacion} ms por afirmacion)`);
 
   if (mejor.modelo === rapido.modelo) {
-    console.log(verde(`\n  ${mejor.modelo} gana en las dos cosas. Cambialo por defecto en src/config.ts.`));
+    console.log(verde(`\n  ${mejor.modelo} gana en las dos cosas. Conviene cambiarlo por defecto en src/config.ts.`));
   } else {
     const deltaCalidad = ((mejor.campos.todosLosCampos ?? 0) - (rapido.campos.todosLosCampos ?? 0)) * 100;
     const veces = mejor.msPorAfirmacion / rapido.msPorAfirmacion;

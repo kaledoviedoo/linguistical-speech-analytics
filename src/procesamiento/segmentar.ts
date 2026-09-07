@@ -1,10 +1,13 @@
 /**
- * Convierte la transcripcion (cues o chunks de Whisper) en AFIRMACIONES individuales
- * preservando el timestamp de cada una.
+ * Convierte la transcripcion en AFIRMACIONES individuales con su timestamp.
  *
  * Los cues de subtitulo cortan a mitad de frase, asi que primero se reconstruye el texto
- * continuo con un mapa caracter -> tiempo, se parte en oraciones, y luego cada oracion
- * recupera su inicio/fin interpolando sobre ese mapa.
+ * continuo con un mapa caracter -> tiempo, se corta, y cada trozo recupera su inicio y fin
+ * interpolando sobre ese mapa.
+ *
+ * El corte tiene dos modos. Con puntuacion se parte en oraciones. Sin ella (tipico de la
+ * transcripcion automatica de YouTube) se parte por las PAUSAS del hablante, que es la
+ * unica senal de limite que queda: ver `transcripcionSinPuntuacion`.
  */
 import type { Afirmacion, SegmentoTranscripcion } from '../tipos.js';
 import { crearDetector, nombreIdioma } from './idioma.js';
@@ -21,18 +24,7 @@ const ABREVIATURAS = new Set([
 const LARGO_MAXIMO = 420;
 const LARGO_MINIMO = 15;
 
-/**
- * SEGMENTAR TEXTO SIN PUNTUACION (medido sobre un discurso real en espanol)
- *
- * La transcripcion automatica de YouTube no puntua. Un discurso de ~30 minutos que en
- * subtitulos publicados habria dado ~300 oraciones dio 87 bloques de 420 caracteres
- * cortados donde caia, y el modelo marco CERO afirmaciones sobre el umbral: preguntarle
- * si "esta afirmacion" usa lenguaje causal sin comparacion, cuando "esta afirmacion" son
- * cinco afirmaciones distintas pegadas, no tiene respuesta posible.
- *
- * El corte por oraciones necesita puntos. Cuando no los hay, la unica senal real de
- * limite que queda son las PAUSAS del hablante, que los timestamps de los cues si traen.
- */
+/* Umbrales del corte por pausas, para transcripciones sin puntuacion. */
 const LARGO_MAXIMO_SIN_PUNTUACION = 240;
 const PAUSA_MINIMA = 0.65;
 /** Prosa puntuada trae del orden de 5-15 terminadores cada 1000 caracteres; la ASR, casi 0. */
@@ -123,11 +115,7 @@ function partirEnOraciones(texto: string): { desde: number; hasta: number }[] {
   return cortes;
 }
 
-/**
- * Corta un rango en pedazos separados por las PAUSAS del hablante. Es el reemplazo del
- * corte por oraciones cuando no hay puntuacion: un silencio de mas de PAUSA_MINIMA entre
- * dos cues es el limite mas parecido a un punto que deja el audio.
- */
+/** Corta por silencios de mas de PAUSA_MINIMA entre cues (reemplaza al corte por oraciones). */
 function partirPorPausas(anclajes: Anclaje[], largoTexto: number): { desde: number; hasta: number }[] {
   if (anclajes.length === 0) return [];
   const cortes = [0];
@@ -160,7 +148,7 @@ function subdividirLargas(
     let cursor = r.desde;
     while (r.hasta - cursor > maximo) {
       const ventana = texto.slice(cursor, cursor + maximo);
-      // Sin puntuacion tampoco hay comas: el ultimo espacio evita partir una palabra al medio.
+      // Sin puntuacion tampoco hay comas, asi que el ultimo espacio evita partir palabras.
       const idx = Math.max(ventana.lastIndexOf('; '), ventana.lastIndexOf(', '), ventana.lastIndexOf(' '));
       const corte = idx > maximo * 0.4 ? cursor + idx + 1 : cursor + maximo;
       salida.push({ desde: cursor, hasta: corte });
@@ -193,9 +181,7 @@ export function segmentarEnAfirmaciones(
   void idiomaDocumento;
   const detector = crearDetector(texto, idiomaForzado);
 
-  // Con puntuacion se corta por oraciones; sin ella, por las pausas del hablante y con
-  // un largo maximo mucho mas chico, porque cada bloque tiene que ser UNA afirmacion.
-  const sinPuntuacion = transcripcionSinPuntuacion(segmentos);
+    const sinPuntuacion = transcripcionSinPuntuacion(segmentos);
   const rangos = sinPuntuacion
     ? subdividirLargas(partirPorPausas(anclajes, texto.length), texto, LARGO_MAXIMO_SIN_PUNTUACION)
     : subdividirLargas(partirEnOraciones(texto), texto);

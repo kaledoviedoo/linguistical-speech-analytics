@@ -1,18 +1,12 @@
 /**
- * Deteccion automatica de idioma, 100% offline (franc: modelos de trigramas embebidos).
+ * Deteccion de idioma en dos niveles, con franc.
  *
- * franc es fiable con texto largo y ruidoso con frases sueltas: una oracion de 60
- * caracteres en espanol puede salir "gallego", "portugues" o algo mucho mas exotico.
- * Por eso la deteccion es en dos niveles:
+ * Primero sobre el documento completo, para saber que idiomas son plausibles. Despues por
+ * afirmacion, pero solo se acepta el cambio si el segmento tiene al menos 140 caracteres y
+ * el idioma detectado esta entre los candidatos del documento.
  *
- *  1. Sobre el documento completo se calcula el idioma dominante Y una lista corta
- *     de candidatos plausibles (los idiomas que franc considera parecidos a ESTE texto).
- *  2. Un segmento solo puede cambiar de idioma si es lo bastante largo (>= 140 chars)
- *     y si el idioma detectado esta entre esos candidatos. Cualquier otra cosa hereda
- *     el idioma del documento.
- *
- * Resultado: un discurso bilingue si se etiqueta bien por tramos, pero una frase
- * corta en espanol ya no aparece marcada como un idioma que no viene al caso.
+ * Sin ese doble filtro, una frase corta en un discurso en espanol se detecta como catalan
+ * o portugues y ensucia el reporte.
  */
 import { franc, francAll } from 'franc';
 

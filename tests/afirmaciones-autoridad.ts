@@ -1,13 +1,12 @@
 /**
- * Conjunto de control del criterio APELACION A AUTORIDAD.
+ * Conjunto de control del criterio de apelacion a autoridad (14 casos).
  *
- * Misma regla que en el causal: la respuesta correcta tiene que deducirse de las
- * definiciones del prompt, no de la opinion de quien anota. Y la misma advertencia
- * de alcance: ninguno de estos casos dice si la autoridad citada tiene razon. Solo
- * si el oyente puede ir a comprobarlo.
+ * Misma regla que en el causal: la respuesta correcta se deduce de las definiciones del
+ * prompt, no de la opinion de quien anota. Ningun caso dice si la autoridad citada tiene
+ * razon, solo si el oyente puede ir a comprobarlo.
  *
- * Son 14 casos, no 24: el criterio es mas nuevo y prefiero pocos casos claros antes
- * que muchos discutibles. Crece cuando haya material real anotado.
+ * Los casos a11 y a12 salen de un discurso real y son propuestas normativas, que es el
+ * modo de fallo que el conjunto sintetico no cubria.
  */
 import type { CasoControl, ConjuntoDeControl } from './casos-tipos.js';
 
@@ -157,10 +156,8 @@ export const CASOS_AUTORIDAD: CasoControl[] = [
   },
 
   // ------------------------------------- material real (discurso ONU, es)
-  // Los dos son NORMATIVOS: proponen que algo deberia hacerse. No invocan ninguna
-  // fuente de conocimiento. El modelo los marco con score 0.80 en la medicion sobre
-  // el discurso completo, asi que entran al conjunto como controles negativos: el
-  // conjunto anterior no tenia una sola oracion normativa y por eso no veia el fallo.
+  // Los dos son normativos: proponen que algo deberia hacerse, sin invocar ninguna fuente.
+  // Entran como controles negativos porque el conjunto sintetico no tenia oraciones asi.
   {
     id: 'a11',
     idioma: 'es',
@@ -180,11 +177,8 @@ export const CASOS_AUTORIDAD: CasoControl[] = [
   {
     id: 'a12',
     idioma: 'es',
-    // VERBATIM del discurso, incluida la clausula del medio. La primera version que
-    // escribi la habia recortado, y justamente ahi estaba lo interesante: "la base de la
-    // civilizacion y de la sabiduria de la humanidad" SI invoca un saber recibido. Sin
-    // esa clausula el caso pasaba y no probaba nada. Anotar material real significa
-    // copiarlo tal cual, aunque quede largo.
+    // Verbatim, incluida la clausula del medio: "la base de la civilizacion y de la
+    // sabiduria de la humanidad" SI invoca un saber recibido, y recortarla anula el caso.
     texto:
       'Las Naciones Unidas deben hacer respetar los tribunales internacionales de justicia, ' +
       'el derecho internacional, que es la base de la civilizacion y de la sabiduria de la ' +
